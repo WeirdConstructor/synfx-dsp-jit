@@ -406,7 +406,7 @@ impl DSPFunction {
 
     /// Helper function, it lets you specify only the contents of the parameters
     /// `"in1"` and `"in2"`. It also returns you the values for `"&sig1"` and `"&sig2"`
-    /// after execution.
+    /// after execution. The third value is the return value of the compiled expression.
     pub fn exec_2in_2out(&mut self, in1: f64, in2: f64) -> (f64, f64, f64) {
         let mut s1 = 0.0;
         let mut s2 = 0.0;
