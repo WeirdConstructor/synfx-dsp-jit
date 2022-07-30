@@ -1,0 +1,16 @@
+[package]
+name = "synfx-dsp-jit"
+version = "0.5.0"
+edition = "2021"
+authors = ["Weird Constructor <weirdconstructor@gmail.com>"]
+license = "GPL-3.0-or-later"
+description = "DSP JIT (Just In Time compiled) engine for real time audio synthesis and effects for Rust "
+keywords = ["audio", "music", "real-time", "synthesis", "jit", "dsp", "sound"]
+categories = ["multimedia::audio", "multimedia", "algorithms", "mathematics"]
+
+[dependencies]
+cranelift = "0.86.1"
+cranelift-module = "0.86.1"
+cranelift-jit = "0.86.1"
+cranelift-codegen = "0.86.1"
+cranelift-native = "0.86.1"
