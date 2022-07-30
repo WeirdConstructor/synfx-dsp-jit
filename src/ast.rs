@@ -114,7 +114,7 @@ impl ASTFun {
     }
 }
 
-fn walk_ast<F: FnMut(&mut ASTNode)>(node: &mut ASTNode, f: &mut F) {
+pub fn walk_ast<F: FnMut(&mut ASTNode)>(node: &mut ASTNode, f: &mut F) {
     f(node);
     match node {
         ASTNode::Lit(_) | ASTNode::Var(_) => {}
