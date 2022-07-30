@@ -43,6 +43,7 @@ impl DSPNodeContext {
         }
     }
 
+    /// Creates a new [DSPNodeContext] that you can pass into [crate::JIT::new].
     pub fn new_ref() -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Self::new()))
     }
@@ -131,12 +132,19 @@ impl DSPNodeContext {
         }
     }
 
+    /// If you received a [DSPFunction] back from the audio thread, you should
+    /// pass it into this function. It will make sure to purge old unused [DSPNodeState] instances.
     pub fn cleanup_dsp_fun_after_user(&mut self, _fun: Box<DSPFunction>) {
         // TODO: Garbage collect and free unused node state!
         //       But this must happen by the backend/frontend thread separation.
         //       Best would be to provide DSPNodeContext::cleaup_dsp_function_after_use(DSPFunction).
     }
 
+    /// You must call this after all [DSPFunction] instances compiled with this state are done executing.
+    /// If you don't call this, you might get a memory leak.
+    /// The API is a bit manual at this point, because usually [DSPFunction]
+    /// will be executed on a different thread, and synchronizing this would come with
+    /// additional overhead that I wanted to save.
     pub fn free(&mut self) {
         if !self.state.is_null() {
             unsafe { Box::from_raw(self.state) };
@@ -246,7 +254,8 @@ pub struct DSPFunction {
 unsafe impl Send for DSPFunction {}
 
 impl DSPFunction {
-    pub fn new(state: *mut DSPState, dsp_ctx_generation: u64) -> Self {
+    /// Used by [DSPNodeContext] to create a new instance of this.
+    pub(crate) fn new(state: *mut DSPState, dsp_ctx_generation: u64) -> Self {
         Self {
             state,
             node_state_types: vec![],
@@ -262,7 +271,7 @@ impl DSPFunction {
 
     /// At the end of the compilation the [crate::JIT] will put the resulting function
     /// pointer into this function.
-    pub fn set_function_ptr(&mut self, function: *const u8, module: JITModule) {
+    pub(crate) fn set_function_ptr(&mut self, function: *const u8, module: JITModule) {
         self.module = Some(module);
         self.function = Some(unsafe {
             mem::transmute::<
@@ -286,6 +295,12 @@ impl DSPFunction {
         });
     }
 
+    /// This function must be called before [DSPFunction::exec]!
+    /// otherwise your states might not be properly initialized or preserved.
+    ///
+    /// If you recompiled a function, pass the old one on the audio thread to
+    /// the `previous_function` parameter here. It will take care of preserving
+    /// state, such as persistent variables (those that start with "*": `crate::build::var("*abc")`).
     pub fn init(&mut self, srate: f64, previous_function: Option<&DSPFunction>) {
         if let Some(previous_function) = previous_function {
             let prev_len = previous_function.persistent_vars.len();
@@ -305,6 +320,8 @@ impl DSPFunction {
         }
     }
 
+    /// If the audio thread changes the sampling rate, call this function, it will update
+    /// the [DSPState] and reset all [DSPNodeState]s.
     pub fn set_sample_rate(&mut self, srate: f64) {
         unsafe {
             (*self.state).srate = srate;
@@ -314,20 +331,55 @@ impl DSPFunction {
         self.reset();
     }
 
+    /// If the DSP state needs to be resetted, call this on the audio thread.
     pub fn reset(&mut self) {
         for (typ, ptr) in self.node_state_types.iter().zip(self.node_states.iter_mut()) {
             typ.reset_state(self.state, *ptr);
         }
     }
 
+    /// Use this to retrieve a pointer to the [DSPState] to access it between
+    /// calls to [DSPFunction::exec].
     pub fn get_dsp_state_ptr(&self) -> *mut DSPState {
         self.state
     }
 
+    /// Use this to access the [DSPState] pointer between calls to [DSPFunction::exec].
     pub unsafe fn with_dsp_state<R, F: FnMut(*mut DSPState) -> R>(&mut self, mut f: F) -> R {
         f(self.get_dsp_state_ptr())
     }
 
+    /// Use this to access the state of a specific DSP node state pointer between
+    /// calls to [DSPFunction::exec].
+    ///
+    /// The `node_state_uid` and the type you pass here must match! It's your responsibility
+    /// to make sure this works!
+    ///```
+    /// use synfx_dsp_jit::*;
+    /// use synfx_dsp_jit::build::*;
+    /// use synfx_dsp_jit::stdlib::AccumNodeState;
+    ///
+    /// let (ctx, mut fun) = instant_compile_ast(call("accum", 21, &[var("in1")])).unwrap();
+    ///
+    /// fun.init(44100.0, None);
+    /// // Accumulate 42.0 here:
+    /// fun.exec_2in_2out(21.0, 0.0);
+    /// fun.exec_2in_2out(21.0, 0.0);
+    ///
+    /// unsafe {
+    ///     // Check 42.0 and set 99.0
+    ///     fun.with_node_state(21, |state: *mut AccumNodeState| {
+    ///         assert!(((*state).value - 42.0).abs() < 0.0001);
+    ///         (*state).value = 99.0;
+    ///     })
+    /// };
+    ///
+    /// // Accumulate up to 100.0 here:
+    /// let (_, _, ret) = fun.exec_2in_2out(1.0, 0.0);
+    /// assert!((ret - 100.0).abs() < 0.0001);
+    ///
+    /// ctx.borrow_mut().free();
+    ///```
     pub unsafe fn with_node_state<T, R, F: FnMut(*mut T) -> R>(
         &mut self,
         node_state_uid: u64,
@@ -340,6 +392,8 @@ impl DSPFunction {
         }
     }
 
+    /// Retrieves the DSP node state pointer for a certain unique node state id.
+    /// You are responsible afterwards for knowing what type the actual pointer is of.
     pub fn get_node_state_ptr(&self, node_state_uid: u64) -> Option<*mut u8> {
         for (i, uid) in self.node_state_uids.iter().enumerate() {
             if *uid == node_state_uid {
@@ -350,6 +404,9 @@ impl DSPFunction {
         None
     }
 
+    /// Helper function, it lets you specify only the contents of the parameters
+    /// `"in1"` and `"in2"`. It also returns you the values for `"&sig1"` and `"&sig2"`
+    /// after execution.
     pub fn exec_2in_2out(&mut self, in1: f64, in2: f64) -> (f64, f64, f64) {
         let mut s1 = 0.0;
         let mut s2 = 0.0;
@@ -357,6 +414,11 @@ impl DSPFunction {
         (s1, s2, r)
     }
 
+    /// Executes the machine code and provides the following parameters in order:
+    /// `"in1", "in2", "alpha", "beta", "delta", "gamma", "&sig1", "&sig2"`
+    ///
+    /// It returns the return value of the computation. For addition outputs you can
+    /// write to `"&sig1"` or `"&sig2"` with for instance: `assign(var("&sig1"), literal(10.0))`.
     pub fn exec(
         &mut self,
         in1: f64,
@@ -389,7 +451,7 @@ impl DSPFunction {
         ret
     }
 
-    pub fn install(&mut self, node_state: &mut DSPNodeState) -> usize {
+    pub(crate) fn install(&mut self, node_state: &mut DSPNodeState) -> usize {
         let idx = self.node_states.len();
         node_state.mark(self.dsp_ctx_generation, idx);
 
@@ -404,12 +466,13 @@ impl DSPFunction {
         idx
     }
 
-    pub fn touch_persistent_var_index(&mut self, idx: usize) {
+    pub(crate) fn touch_persistent_var_index(&mut self, idx: usize) {
         if idx >= self.persistent_vars.len() {
             self.persistent_vars.resize(idx + 1, 0.0);
         }
     }
 
+    /// Checks if the DSP function actually has the state for a certain unique DSP node state ID.
     pub fn has_dsp_node_state_uid(&self, uid: u64) -> bool {
         for i in self.node_state_uids.iter() {
             if *i == uid {
@@ -448,8 +511,163 @@ pub enum DSPNodeSigBit {
     NodeStatePtr,
 }
 
-/// A trait that handles allocation and deallocation of the
-/// state that belongs to a DSPNodeType.
+/// This trait allows you to define your own DSP stateful and stateless primitives.
+/// Among defining a few important properties for the compiler, it handles allocation and
+/// deallocation of the state that belongs to a DSPNodeType.
+///
+/// ## Stateless DSP Nodes/Primitives
+///
+/// Here is a simple example how to define a stateless DSP function:
+///
+///```
+/// use std::rc::Rc;
+/// use std::cell::RefCell;
+/// use synfx_dsp_jit::{DSPNodeType, DSPNodeSigBit, DSPNodeTypeLibrary};
+///
+/// let lib = Rc::new(RefCell::new(DSPNodeTypeLibrary::new()));
+///
+/// pub struct MyPrimitive;
+///
+/// extern "C" fn my_primitive_function(a: f64, b: f64) -> f64 {
+///    (2.0 * a * b.cos()).sin()
+/// }
+///
+/// impl DSPNodeType for MyPrimitive {
+///     // make a name, so you can refer to it via `ASTNode::Call("my_prim", ...)`.
+///     fn name(&self) -> &str { "my_prim" }
+///
+///     // Provide a pointer:
+///     fn function_ptr(&self) -> *const u8 { my_primitive_function as *const u8 }
+///
+///     // Define the function signature for the JIT compiler:
+///     fn signature(&self, i: usize) -> Option<DSPNodeSigBit> {
+///         match i {
+///             0 | 1 => Some(DSPNodeSigBit::Value),
+///             _ => None, // Return None to signal we only take 2 parameters
+///         }
+///     }
+///
+///     // Tell the JIT compiler that you return a value:
+///     fn has_return_value(&self) -> bool { true }
+///
+///     // The other trait functions do not need to be provided, because this is
+///     // a stateless primitive.
+/// }
+///
+/// lib.borrow_mut().add(Rc::new(MyPrimitive {}));
+///
+/// use synfx_dsp_jit::{ASTFun, JIT, DSPNodeContext};
+/// let ctx = DSPNodeContext::new_ref();
+/// let jit = JIT::new(lib.clone(), ctx.clone());
+///
+/// use synfx_dsp_jit::build::*;
+/// let mut fun = jit.compile(ASTFun::new(
+///     op_add(call("my_prim", 0, &[var("in1"), var("in2")]), literal(10.0))))
+///     .expect("no compile error");
+///
+/// fun.init(44100.0, None);
+///
+/// let (_s1, _s2, ret) = fun.exec_2in_2out(1.0, 1.5);
+///
+/// assert!((ret - 10.1410029).abs() < 0.000001);
+///
+/// ctx.borrow_mut().free();
+///```
+///
+/// ## Stateful DSP Nodes/Primitives
+///
+/// Here is a simple example how to define a stateful DSP function,
+/// in this example just an accumulator.
+///
+/// There is a little helper macro that might help you: [crate::stateful_dsp_node_type]
+///
+///```
+/// use std::rc::Rc;
+/// use std::cell::RefCell;
+/// use synfx_dsp_jit::{DSPNodeType, DSPState, DSPNodeSigBit, DSPNodeTypeLibrary};
+///
+/// let lib = Rc::new(RefCell::new(DSPNodeTypeLibrary::new()));
+///
+/// pub struct MyPrimitive;
+///
+/// struct MyPrimAccumulator {
+///     count: f64,
+/// }
+///
+/// // Be careful defining the signature of this primitive, there is no safety net here!
+/// // Check twice with DSPNodeType::signature()!
+/// extern "C" fn my_primitive_accum(add: f64, state: *mut u8) -> f64 {
+///     let state = unsafe { &mut *(state as *mut MyPrimAccumulator) };
+///     state.count += add;
+///     state.count
+/// }
+///
+/// impl DSPNodeType for MyPrimitive {
+///     // make a name, so you can refer to it via `ASTNode::Call("my_prim", ...)`.
+///     fn name(&self) -> &str { "accum" }
+///
+///     // Provide a pointer:
+///     fn function_ptr(&self) -> *const u8 { my_primitive_accum as *const u8 }
+///
+///     // Define the function signature for the JIT compiler. Be really careful though,
+///     // There is no safety net here.
+///     fn signature(&self, i: usize) -> Option<DSPNodeSigBit> {
+///         match i {
+///             0 => Some(DSPNodeSigBit::Value),
+///             1 => Some(DSPNodeSigBit::NodeStatePtr),
+///             _ => None, // Return None to signal we only take 1 parameter
+///         }
+///     }
+///
+///     // Tell the JIT compiler that you return a value:
+///     fn has_return_value(&self) -> bool { true }
+///
+///     // Specify how to reset the state:
+///     fn reset_state(&self, _dsp_state: *mut DSPState, state_ptr: *mut u8) {
+///         unsafe { (*(state_ptr as *mut MyPrimAccumulator)).count = 0.0 };
+///     }
+///
+///     // Allocate our state:
+///     fn allocate_state(&self) -> Option<*mut u8> {
+///         Some(Box::into_raw(Box::new(MyPrimAccumulator { count: 0.0 })) as *mut u8)
+///     }
+///
+///     // Deallocate our state:
+///     fn deallocate_state(&self, ptr: *mut u8) {
+///         unsafe { Box::from_raw(ptr as *mut MyPrimAccumulator) };
+///     }
+/// }
+///
+/// lib.borrow_mut().add(Rc::new(MyPrimitive {}));
+///
+/// use synfx_dsp_jit::{ASTFun, JIT, DSPNodeContext};
+/// let ctx = DSPNodeContext::new_ref();
+/// let jit = JIT::new(lib.clone(), ctx.clone());
+///
+/// use synfx_dsp_jit::build::*;
+/// let mut fun =
+///     jit.compile(ASTFun::new(call("accum", 0, &[var("in1")]))).expect("no compile error");
+///
+/// fun.init(44100.0, None);
+///
+/// let (_s1, _s2, ret) = fun.exec_2in_2out(1.0, 0.0);
+/// assert!((ret - 1.0).abs() < 0.000001);
+///
+/// let (_s1, _s2, ret) = fun.exec_2in_2out(1.0, 0.0);
+/// assert!((ret - 2.0).abs() < 0.000001);
+///
+/// let (_s1, _s2, ret) = fun.exec_2in_2out(1.0, 0.0);
+/// assert!((ret - 3.0).abs() < 0.000001);
+///
+/// // You can cause a reset eg. with fun.set_sample_rate() or fun.reset():
+/// fun.reset();
+///
+/// // Counting will restart:
+/// let (_s1, _s2, ret) = fun.exec_2in_2out(1.0, 0.0);
+/// assert!((ret - 1.0).abs() < 0.000001);
+///
+/// ctx.borrow_mut().free();
+///```
 pub trait DSPNodeType {
     /// The name of this DSP node, by this name it can be called from
     /// the [crate::ast::ASTFun].

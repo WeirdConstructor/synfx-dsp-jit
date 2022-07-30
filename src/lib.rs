@@ -123,7 +123,7 @@ ctx.borrow_mut().free();
 mod ast;
 mod context;
 mod jit;
-mod stdlib;
+pub mod stdlib;
 
 pub use ast::{build, ASTBinOp, ASTFun, ASTNode};
 pub use context::{

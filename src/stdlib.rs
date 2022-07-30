@@ -2,14 +2,40 @@
 // This file is a part of synfx-dsp-jit. Released under GPL-3.0-or-later.
 // See README.md and COPYING for details.
 
-use crate::{DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary};
+use crate::{DSPNodeSigBit, DSPState, DSPNodeType, DSPNodeTypeLibrary};
 use std::cell::RefCell;
 use std::rc::Rc;
+
+pub struct AccumNodeState {
+    pub value: f64,
+}
+
+impl AccumNodeState {
+    fn reset(&mut self, _state: &mut DSPState) {
+        *self = Self::default();
+    }
+}
+
+impl Default for AccumNodeState {
+    fn default() -> Self {
+        Self { value: 0.0 }
+    }
+}
+
+extern "C" fn process_accum_nod(v: f64, state: *mut AccumNodeState) -> f64 {
+    let mut state = unsafe { &mut *state };
+    state.value += v;
+    state.value
+}
+
+crate::stateful_dsp_node_type! {
+    AccumNodeType, AccumNodeState => process_accum_nod "accum" "vSr"
+}
 
 #[derive(Default)]
 struct SinNodeType;
 
-pub extern "C" fn jit_sin(v: f64) -> f64 {
+extern "C" fn jit_sin(v: f64) -> f64 {
     v.sin()
 }
 
@@ -42,5 +68,6 @@ impl DSPNodeType for SinNodeType {
 pub fn get_standard_library() -> Rc<RefCell<DSPNodeTypeLibrary>> {
     let lib = Rc::new(RefCell::new(DSPNodeTypeLibrary::new()));
     lib.borrow_mut().add(Rc::new(SinNodeType::default()));
+    lib.borrow_mut().add(AccumNodeType::new_ref());
     lib
 }

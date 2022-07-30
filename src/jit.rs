@@ -16,7 +16,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-/// The basic JIT class.
+/// The Just In Time compiler, that translates a [crate::ASTNode] tree into
+/// machine code in form of a [DSPFunction] structure you can use to execute it.
+///
+/// See also [JIT::compile] for an example.
 pub struct JIT {
     /// The function builder context, which is reused across multiple
     /// FunctionBuilder instances.
@@ -39,6 +42,21 @@ pub struct JIT {
 }
 
 impl JIT {
+    /// Create a new JIT compiler instance.
+    ///
+    /// Because every newly compile function gets it's own fresh module,
+    /// you need to recreate a [JIT] instance for every time you compile
+    /// a function.
+    ///
+    ///```
+    /// use synfx_dsp_jit::*;
+    /// let lib = get_standard_library();
+    /// let ctx = DSPNodeContext::new_ref();
+    ///
+    /// let jit = JIT::new(lib.clone(), ctx.clone());
+    /// // ...
+    /// ctx.borrow_mut().free();
+    ///```
     pub fn new(
         dsp_lib: Rc<RefCell<DSPNodeTypeLibrary>>,
         dsp_ctx: Rc<RefCell<DSPNodeContext>>,
@@ -75,7 +93,40 @@ impl JIT {
         }
     }
 
-    /// Compile a string in the toy language into machine code.
+    /// Compiles a [crate::ASTFun] / [crate::ASTNode] tree into a [DSPFunction].
+    ///
+    /// There are some checks done by the compiler, see the possible errors in [JITCompileError].
+    /// Otherwise the usage is pretty straight forward, here is another example:
+    ///```
+    /// use synfx_dsp_jit::*;
+    /// let lib = get_standard_library();
+    /// let ctx = DSPNodeContext::new_ref();
+    ///
+    /// let jit = JIT::new(lib.clone(), ctx.clone());
+    /// let mut fun = jit.compile(ASTFun::new(Box::new(ASTNode::Lit(0.424242))))
+    ///     .expect("Compiles fine");
+    ///
+    /// // ...
+    /// fun.init(44100.0, None);
+    /// // ...
+    /// let (mut sig1, mut sig2) = (0.0, 0.0);
+    /// let ret = fun.exec(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, &mut sig1, &mut sig2);
+    /// // ...
+    ///
+    /// // Compile a different function now...
+    /// let jit = JIT::new(lib.clone(), ctx.clone());
+    /// let mut new_fun = jit.compile(ASTFun::new(Box::new(ASTNode::Lit(0.33333))))
+    ///     .expect("Compiles fine");
+    ///
+    /// // Make sure to preserve any (possible) state...
+    /// new_fun.init(44100.0, Some(&fun));
+    /// // ...
+    /// let (mut sig1, mut sig2) = (0.0, 0.0);
+    /// let ret = new_fun.exec(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, &mut sig1, &mut sig2);
+    /// // ...
+    ///
+    /// ctx.borrow_mut().free();
+    ///```
     pub fn compile(mut self, prog: ASTFun) -> Result<Box<DSPFunction>, JITCompileError> {
         let module = self.module.as_mut().expect("Module still loaded");
         let ptr_type = module.target_config().pointer_type();
@@ -569,6 +620,61 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
     }
 }
 
+/// This macro can help you defining new stateful DSP nodes:
+///
+///```
+/// use synfx_dsp_jit::*;
+///
+/// struct MyDSPNode {
+///     value: f64,
+/// }
+///
+/// impl MyDSPNode {
+///     fn reset(&mut self, _state: &mut DSPState) {
+///         *self = Self::default();
+///     }
+/// }
+///
+/// impl Default for MyDSPNode {
+///     fn default() -> Self {
+///         Self { value: 0.0 }
+///     }
+/// }
+///
+/// extern "C" fn process_my_dsp_node(my_state: *mut MyDSPNode) -> f64 {
+///     let mut my_state = unsafe { &mut *my_state };
+///     my_state.value += 1.0;
+///     my_state.value
+/// }
+///
+/// // DIYNodeType is the type that is newly defined here, that one you
+/// // pass to DSPNodeTypeLibrary::add
+/// synfx_dsp_jit::stateful_dsp_node_type! {
+///     DIYNodeType, MyDSPNode => process_my_dsp_node "my_dsp" "Sr"
+/// }
+///
+/// // Then use the type by adding it:
+/// fn make_library() -> DSPNodeTypeLibrary {
+///     let mut lib = DSPNodeTypeLibrary::new();
+///     lib.add(DIYNodeType::new_ref());
+///     lib
+/// }
+///```
+///
+/// You might've guessed, `process_my_dsp_node` is the function identifier in the Rust
+/// code. The `"my_dsp"` is the name you can use to refer to this in [ASTNode::Call]:
+/// `ASTNode::Call("my_dsp".to_string(), 1, ...)`.
+/// **Attention:** Make sure to provide unique state IDs here!
+///
+/// The `"Sr"` is a string that specifies the signature of the function. Following characters
+/// are available:
+///
+/// - "v" - A floating point value
+/// - "D" - The global [crate::DSPState] pointer
+/// - "S" - The node specific state pointer (`MyDSPNode`)
+/// - "r" - Must be specified as last one, defines that this function returns something.
+///
+///
 #[macro_export]
 macro_rules! stateful_dsp_node_type {
     ($node_type: ident, $struct_type: ident =>
@@ -579,7 +685,7 @@ macro_rules! stateful_dsp_node_type {
                 std::rc::Rc::new(Self {})
             }
         }
-        impl synfx_dsp_jit::DSPNodeType for $node_type {
+        impl DSPNodeType for $node_type {
             fn name(&self) -> &str {
                 $jit_name
             }
@@ -601,7 +707,7 @@ macro_rules! stateful_dsp_node_type {
                 $signature.find("r").is_some()
             }
 
-            fn reset_state(&self, dsp_state: *mut synfx_dsp_jit::DSPState, state_ptr: *mut u8) {
+            fn reset_state(&self, dsp_state: *mut DSPState, state_ptr: *mut u8) {
                 let ptr = state_ptr as *mut $struct_type;
                 unsafe {
                     (*ptr).reset(&mut (*dsp_state));
