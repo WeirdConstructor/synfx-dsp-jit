@@ -2,7 +2,7 @@
 // This file is a part of synfx-dsp-jit. Released under GPL-3.0-or-later.
 // See README.md and COPYING for details.
 
-use crate::{DSPNodeTypeLibrary, DSPNodeType, DSPNodeSigBit};
+use crate::{DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary};
 use std::cell::RefCell;
 use std::rc::Rc;
 

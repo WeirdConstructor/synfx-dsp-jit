@@ -2,13 +2,13 @@
 // This file is a part of synfx-dsp-jit. Released under GPL-3.0-or-later.
 // See README.md and COPYING for details.
 
-use synfx_dsp_jit::*;
 use std::cell::RefCell;
 use std::rc::Rc;
+use synfx_dsp_jit::*;
 
 mod test_node_type;
-use test_node_type::TSTState;
 use synfx_dsp_jit::DSPState;
+use test_node_type::TSTState;
 
 fn get_default_library() -> Rc<RefCell<DSPNodeTypeLibrary>> {
     let lib = get_standard_library();
@@ -125,7 +125,8 @@ fn check_jit_thread_stmts() {
         let (s1, s2, res) = code.exec_2in_2out(1.1, 2.2);
         tx.send((s1, s2, res)).expect("Sending via mpsc works here");
     })
-    .join().expect("Joining threads works in this test");
+    .join()
+    .expect("Joining threads works in this test");
 
     let (s1, s2, res) = rx.recv().unwrap();
     assert_float_eq!(res, 24.1);

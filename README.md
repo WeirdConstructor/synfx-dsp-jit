@@ -1,8 +1,6 @@
-// Copyright (c) 2022 Weird Constructor <weirdconstructor@gmail.com>
-// This file is a part of synfx-dsp-jit. Released under GPL-3.0-or-later.
-// See README.md and COPYING for details.
+# synfx-dsp-jit
 
-/*! synfx-dsp-jit is a specialized JIT compiler for digital (audio) signal processing for Rust.
+synfx-dsp-jit is a specialized JIT compiler for digital (audio) signal processing for Rust.
 
 This library allows you to compile an simplified abstract syntax tree (AST) down to machine code.
 This crate uses the [Cranelift JIT compiler](https://github.com/bytecodealliance/wasmtime/tree/main/cranelift)
@@ -31,16 +29,5 @@ or even JIT compiling the Grid itself (I'm not sure about that).
 - [Gammou - polyphonic modular sound synthesizer](https://github.com/aliefhooghe/Gammou)
 
 
-*/
 
-mod ast;
-mod context;
-mod jit;
-mod stdlib;
-
-pub use ast::{build, ASTBinOp, ASTFun, ASTNode};
-pub use context::{
-    DSPFunction, DSPNodeContext, DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary, DSPState,
-};
-pub use jit::{get_nop_function, JIT};
-pub use stdlib::get_standard_library;
+License: GPL-3.0-or-later
