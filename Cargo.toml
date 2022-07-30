@@ -7,6 +7,8 @@ license = "GPL-3.0-or-later"
 description = "DSP JIT (Just In Time compiled) engine for real time audio synthesis and effects for Rust "
 keywords = ["audio", "music", "real-time", "synthesis", "jit", "dsp", "sound"]
 categories = ["multimedia::audio", "multimedia", "algorithms", "mathematics"]
+repository = "https://github.com/WeirdConstructor/synfx-dsp-jit"
+readme = "README.md"
 
 [dependencies]
 cranelift = "0.86.1"
