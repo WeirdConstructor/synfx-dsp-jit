@@ -129,14 +129,14 @@ impl JIT {
         let mut trans = DSPFunctionTranslator::new(&mut *dsp_ctx, &*dsp_lib, builder, module);
         trans.register_functions()?;
         let ret = trans.translate(fun)?;
-        println!("{}", trans.builder.func.display());
+        //d// println!("{}", trans.builder.func.display());
         Ok(ret)
     }
 
     //    pub fn translate_ast_node(&mut self, builder: FunctionBuilder<'a>,
 }
 
-struct DSPFunctionTranslator<'a, 'b, 'c> {
+pub(crate) struct DSPFunctionTranslator<'a, 'b, 'c> {
     dsp_ctx: &'c mut DSPNodeContext,
     dsp_lib: &'b DSPNodeTypeLibrary,
     builder: FunctionBuilder<'a>,
@@ -147,6 +147,7 @@ struct DSPFunctionTranslator<'a, 'b, 'c> {
     ptr_w: u32,
 }
 
+/// Error enum for JIT compilation errors.
 #[derive(Debug, Clone)]
 pub enum JITCompileError {
     BadDefinedParams,

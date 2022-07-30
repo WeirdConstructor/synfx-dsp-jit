@@ -2,6 +2,7 @@
 // This file is a part of synfx-dsp-jit. Released under GPL-3.0-or-later.
 // See README.md and COPYING for details.
 
+/// Binary operator for the AST
 #[derive(Debug, Clone, Copy)]
 pub enum ASTBinOp {
     Add,
@@ -16,6 +17,12 @@ pub enum ASTBinOp {
     Ge,
 }
 
+/// Top level structure that holds an AST.
+///
+/// It holds the names of the local variables. For now you can't
+/// specify your own parameter names or change the number of
+/// parameters. The [crate::DSPFunction] is fixed currently to
+/// 8 input parameters with two output signals and one return value (a third signal so to say).
 #[derive(Debug, Clone)]
 pub struct ASTFun {
     params: Vec<String>,
@@ -138,14 +145,34 @@ fn walk_ast<F: FnMut(&mut ASTNode)>(node: &mut ASTNode, f: &mut F) {
     }
 }
 
+/// The abstract syntax tree that the [crate::JIT] can compile down to machine
+/// code (in form of a [crate::DSPFunction]) for you.
+///
+/// See also the [crate::build] module about creating these trees conveniently
+/// directly from Rust code.
 #[derive(Debug, Clone)]
 pub enum ASTNode {
+    /// Literal fixed f64 values.
     Lit(f64),
+    /// Variable and parameter names. Variables that start with a "*" are
+    /// stored persistently across multiple [crate::DSPFunction] invocations for you.
     Var(String),
+    /// Assigns a value to a variable.
     Assign(String, Box<ASTNode>),
+    /// A binary operator. See also [ASTBinOp] which operations are possible.
     BinOp(ASTBinOp, Box<ASTNode>, Box<ASTNode>),
+    /// A conditional statement.
+    ///
+    /// You can specify a [ASTBinOp] with a comparison operation as first element
+    /// here (the condition), or any other kind of expression that returns a value.
+    /// In the latter case the value must be larger or equal to `0.5` to be true.
     If(Box<ASTNode>, Box<ASTNode>, Option<Box<ASTNode>>),
+    /// Calls a DSP node/function by it's name. The second parameter here, the `u64`
+    /// is the unique ID for this ASTNode. It's used to track state of this DSP node.
+    /// You have to make sure that the IDs don't change and that you are not using
+    /// the same ID for multiple stateful DSP nodes here.
     Call(String, u64, Vec<Box<ASTNode>>),
+    /// A list of statements that must be executed in the here specified order.
     Stmts(Vec<Box<ASTNode>>),
 }
 
@@ -212,6 +239,10 @@ impl ASTNode {
 }
 
 pub mod build {
+    /*! This module provides a simplified API for building an [ASTNode] tree
+    directly in Rust. It's useful for building inline DSP functions in Rust
+    either for your own projects or test cases.
+    */
     use super::*;
 
     pub fn fun(e: Box<ASTNode>) -> ASTFun {

@@ -34,7 +34,7 @@ impl DSPNodeType for SinNodeType {
     }
 }
 
-/// Creates a [crate::jit::DSPNodeTypeLibrary] that contains a bunch of
+/// Creates a [crate::context::DSPNodeTypeLibrary] that contains a bunch of
 /// standard components as seem fit by the synfx-dsp-jit crate developer.
 ///
 /// Keep in mind, that you can always create your own custom library.

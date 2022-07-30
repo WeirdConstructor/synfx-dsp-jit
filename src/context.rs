@@ -9,7 +9,7 @@ use std::mem;
 use std::rc::Rc;
 
 /// This table holds all the DSP state including the state of the individual DSP nodes
-/// that were created by the [DSPFunctionTranslator].
+/// that were created by the [crate::jit::DSPFunctionTranslator].
 pub struct DSPNodeContext {
     /// The global DSP state that is passed to all stateful DSP nodes.
     state: *mut DSPState,
@@ -47,13 +47,13 @@ impl DSPNodeContext {
         Rc::new(RefCell::new(Self::new()))
     }
 
-    pub fn init_dsp_function(&mut self) {
+    pub(crate) fn init_dsp_function(&mut self) {
         self.generation += 1;
         self.next_dsp_fun = Some(Box::new(DSPFunction::new(self.state, self.generation)));
     }
 
     /// Retrieve the index into the persistent variable vector passed in as "&pv".
-    pub fn get_persistent_variable_index(&mut self, pers_var_name: &str) -> Result<usize, String> {
+    pub(crate) fn get_persistent_variable_index(&mut self, pers_var_name: &str) -> Result<usize, String> {
         let index = if let Some(index) = self.persistent_var_map.get(pers_var_name) {
             *index
         } else {
@@ -74,7 +74,7 @@ impl DSPNodeContext {
     /// Adds a [DSPNodeState] to the currently compiled [DSPFunction] and returns
     /// the index into the node state vector in the [DSPFunction], so that the JIT
     /// code can index into that vector to find the right state pointer.
-    pub fn add_dsp_node_instance(
+    pub(crate) fn add_dsp_node_instance(
         &mut self,
         node_type: Rc<dyn DSPNodeType>,
         dsp_node_uid: u64,
@@ -113,7 +113,7 @@ impl DSPNodeContext {
         }
     }
 
-    pub fn finalize_dsp_function(
+    pub(crate) fn finalize_dsp_function(
         &mut self,
         function_ptr: *const u8,
         module: JITModule,
@@ -154,7 +154,7 @@ impl Drop for DSPNodeContext {
 }
 
 /// This structure holds all the [DSPNodeType] definitions and provides
-/// them to the [JIT] and [DSPFunctionTranslator].
+/// them to the [crate::JIT] and [crate::jit::DSPFunctionTranslator].
 pub struct DSPNodeTypeLibrary {
     types: Vec<Rc<dyn DSPNodeType>>,
 }
@@ -193,7 +193,7 @@ impl DSPNodeTypeLibrary {
     }
 }
 
-/// This is the result of the JIT compiled [ASTNode] tree.
+/// This is the result of the JIT compiled [crate::ast::ASTNode] tree.
 /// You can send this structure to the audio backend thread and execute it
 /// using [DSPFunction::exec].
 ///
@@ -260,7 +260,7 @@ impl DSPFunction {
         }
     }
 
-    /// At the end of the compilation the [JIT] will put the resulting function
+    /// At the end of the compilation the [crate::JIT] will put the resulting function
     /// pointer into this function.
     pub fn set_function_ptr(&mut self, function: *const u8, module: JITModule) {
         self.module = Some(module);
@@ -431,6 +431,7 @@ impl Drop for DSPFunction {
     }
 }
 
+/// The global DSP state that all stateful [DSPNodeType] DSP nodes share.
 pub struct DSPState {
     pub x: f64,
     pub y: f64,
@@ -438,6 +439,8 @@ pub struct DSPState {
     pub israte: f64,
 }
 
+/// An enum to specify the position of value and [DSPState] and [DSPNodeState] parameters
+/// for the JIT compiler.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DSPNodeSigBit {
     Value,
@@ -449,7 +452,7 @@ pub enum DSPNodeSigBit {
 /// state that belongs to a DSPNodeType.
 pub trait DSPNodeType {
     /// The name of this DSP node, by this name it can be called from
-    /// the [ASTFun].
+    /// the [crate::ast::ASTFun].
     fn name(&self) -> &str;
 
     /// The function pointer that should be inserted.
@@ -481,7 +484,7 @@ pub trait DSPNodeType {
 }
 
 /// A handle to manage the state of a DSP node
-/// that was created while the [DSPFunctionTranslator] compiled the given AST
+/// that was created while the [crate::jit::DSPFunctionTranslator] compiled the given AST
 /// to machine code. The AST needs to take care to refer to the same piece
 /// of state with the same type across different compilations of the AST with the
 /// same [DSPNodeContext].
@@ -491,7 +494,7 @@ pub trait DSPNodeType {
 /// complete DSP function/graph.
 ///
 /// You will not have to allocate and manage this manually, see also [DSPFunction].
-pub struct DSPNodeState {
+pub(crate) struct DSPNodeState {
     /// The node_state_uid that identifies this piece of state uniquely across multiple
     /// ASTs.
     uid: u64,
@@ -514,7 +517,7 @@ pub struct DSPNodeState {
 
 impl DSPNodeState {
     /// Creates a fresh piece of DSP node state.
-    pub fn new(uid: u64, node_type: Rc<dyn DSPNodeType>) -> Self {
+    pub(crate) fn new(uid: u64, node_type: Rc<dyn DSPNodeType>) -> Self {
         Self {
             uid,
             node_type: node_type.clone(),
@@ -526,41 +529,41 @@ impl DSPNodeState {
     }
 
     /// Returns the unique ID of this piece of DSP node state.
-    pub fn uid(&self) -> u64 {
+    pub(crate) fn uid(&self) -> u64 {
         self.uid
     }
 
     /// Marks this piece of DSP state as used and deposits the
     /// index into the current [DSPFunction].
-    pub fn mark(&mut self, gen: u64, index: usize) {
+    pub(crate) fn mark(&mut self, gen: u64, index: usize) {
         self.generation = gen;
         self.function_index = index;
     }
 
     /// Checks if the [DSPNodeState] was initialized by the most recently compiled [DSPFunction]
-    pub fn is_initialized(&self) -> bool {
+    pub(crate) fn is_initialized(&self) -> bool {
         self.initialized
     }
 
     /// Sets that the [DSPNodeState] is initialized.
     ///
     /// This happens once the [DSPNodeContext] finished compiling a [DSPFunction].
-    /// The user of the [DSPNodeContext] or rather the [JIT] needs to make sure to
+    /// The user of the [DSPNodeContext] or rather the [crate::JIT] needs to make sure to
     /// actually really call [DSPFunction::init] of course. Otherwise this state tracking
     /// all falls apart. But this happens across different threads, so the synchronizing effort
     /// for this is not worth it (regarding development time) at the moment I think.
-    pub fn set_initialized(&mut self) {
+    pub(crate) fn set_initialized(&mut self) {
         self.initialized = true;
     }
 
     /// Returns the state pointer for this DSPNodeState instance.
     /// Primarily used by [DSPFunction::install].
-    pub fn ptr(&self) -> *mut u8 {
+    pub(crate) fn ptr(&self) -> *mut u8 {
         self.ptr
     }
 
     /// Returns the [DSPNodeType] for this [DSPNodeState].
-    pub fn node_type(&self) -> Rc<dyn DSPNodeType> {
+    pub(crate) fn node_type(&self) -> Rc<dyn DSPNodeType> {
         self.node_type.clone()
     }
 }
