@@ -2,6 +2,10 @@
 // This file is a part of synfx-dsp-jit. Released under GPL-3.0-or-later.
 // See README.md and COPYING for details.
 
+use crate::{DSPNodeTypeLibrary, DSPNodeType, DSPNodeSigBit};
+use std::cell::RefCell;
+use std::rc::Rc;
+
 #[derive(Default)]
 struct SinNodeType;
 
@@ -37,8 +41,6 @@ impl DSPNodeType for SinNodeType {
 /// Or extend this one using the [DSPNodeType] trait.
 pub fn get_standard_library() -> Rc<RefCell<DSPNodeTypeLibrary>> {
     let lib = Rc::new(RefCell::new(DSPNodeTypeLibrary::new()));
-//    lib.borrow_mut().add(Rc::new(TestNodeType::default()));
     lib.borrow_mut().add(Rc::new(SinNodeType::default()));
     lib
 }
-

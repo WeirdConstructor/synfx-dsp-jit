@@ -311,7 +311,7 @@ impl DSPNodeTypeLibrary {
     /// Iterate through all types in the Library:
     ///
     ///```
-    /// use wblockdsp::*;
+    /// use synfx_dsp_jit::*;
     ///
     /// let lib = DSPNodeTypeLibrary::new();
     /// // ...
@@ -507,21 +507,23 @@ pub struct DSPFunction {
     module: Option<JITModule>,
     /// Storage of persistent variables:
     persistent_vars: Vec<f64>,
-    function: Option<fn(
-        f64,
-        f64,
-        f64,
-        f64,
-        f64,
-        f64,
-        f64,
-        f64,
-        *mut f64,
-        *mut f64,
-        *mut DSPState,
-        *mut *mut u8,
-        *mut f64
-    ) -> f64>,
+    function: Option<
+        fn(
+            f64,
+            f64,
+            f64,
+            f64,
+            f64,
+            f64,
+            f64,
+            f64,
+            *mut f64,
+            *mut f64,
+            *mut DSPState,
+            *mut *mut u8,
+            *mut f64,
+        ) -> f64,
+    >,
 }
 
 unsafe impl Send for DSPFunction {}
@@ -895,7 +897,6 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         .ok_or_else(|| JITCompileError::UndefinedVariable(name.to_string()))?;
                     let ptr = self.builder.use_var(*variable);
                     self.builder.ins().store(MemFlags::new(), value, ptr, 0);
-
                 } else if name.chars().next() == Some('*') {
                     let pv_index = self
                         .dsp_ctx
@@ -913,7 +914,6 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         pvs,
                         Offset32::new(pv_index as i32 * F64.bytes() as i32),
                     );
-
                 } else {
                     let variable = self
                         .variables
@@ -1145,7 +1145,7 @@ macro_rules! stateful_dsp_node_type {
                 std::rc::Rc::new(Self {})
             }
         }
-        impl wblockdsp::DSPNodeType for $node_type {
+        impl synfx_dsp_jit::DSPNodeType for $node_type {
             fn name(&self) -> &str {
                 $jit_name
             }
@@ -1167,7 +1167,7 @@ macro_rules! stateful_dsp_node_type {
                 $signature.find("r").is_some()
             }
 
-            fn reset_state(&self, dsp_state: *mut wblockdsp::DSPState, state_ptr: *mut u8) {
+            fn reset_state(&self, dsp_state: *mut synfx_dsp_jit::DSPState, state_ptr: *mut u8) {
                 let ptr = state_ptr as *mut $struct_type;
                 unsafe {
                     (*ptr).reset(&mut (*dsp_state));

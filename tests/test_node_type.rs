@@ -2,6 +2,8 @@
 // This file is a part of synfx-dsp-jit. Released under GPL-3.0-or-later.
 // See README.md and COPYING for details.
 
+use synfx_dsp_jit::*;
+
 pub struct TSTState {
     pub l: f64,
     pub srate: f64,
@@ -31,7 +33,6 @@ pub extern "C" fn test(x: f64, state: *mut DSPState, mystate: *mut u8) -> f64 {
     };
     x * 10000.0 + 1.0
 }
-
 
 #[derive(Default)]
 pub struct TestNodeType;
