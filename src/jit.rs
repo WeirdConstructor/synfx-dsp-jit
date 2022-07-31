@@ -204,6 +204,7 @@ pub enum JITCompileError {
     BadDefinedParams,
     UnknownFunction(String),
     UndefinedVariable(String),
+    InvalidReturnValueAccess(String),
     DeclareTopFunError(String),
     DefineTopFunError(String),
     UndefinedDSPNode(String),
@@ -244,7 +245,9 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                     DSPNodeSigBit::Value => {
                         sig.params.push(AbiParam::new(F64));
                     }
-                    DSPNodeSigBit::DSPStatePtr | DSPNodeSigBit::NodeStatePtr => {
+                    DSPNodeSigBit::DSPStatePtr
+                    | DSPNodeSigBit::NodeStatePtr
+                    | DSPNodeSigBit::MultReturnPtr => {
                         sig.params.push(AbiParam::new(ptr_type));
                     }
                 }
@@ -364,6 +367,36 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         Offset32::new(pv_index as i32 * F64.bytes() as i32),
                     );
                     Ok(pers_value)
+                } else if name.chars().next() == Some('%') {
+                    if name.len() > 2 {
+                        return Err(JITCompileError::InvalidReturnValueAccess(name.to_string()));
+                    }
+
+                    let offs: i32 =
+                        match name.chars().nth(1) {
+                            Some('1') => 0,
+                            Some('2') => 1,
+                            Some('3') => 2,
+                            Some('4') => 3,
+                            Some('5') => 4,
+                            _ => {
+                                return Err(JITCompileError::InvalidReturnValueAccess(name.to_string()));
+                            },
+                        };
+
+                    let return_vals = self
+                        .variables
+                        .get("&rv")
+                        .ok_or_else(|| JITCompileError::UndefinedVariable("&rv".to_string()))?;
+                    let rvs = self.builder.use_var(*return_vals);
+                    let ret_value = self.builder.ins().load(
+                        F64,
+                        MemFlags::new(),
+                        rvs,
+                        Offset32::new(offs * F64.bytes() as i32),
+                    );
+                    Ok(ret_value)
+
                 } else {
                     let variable = self
                         .variables
@@ -504,6 +537,12 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                                 Offset32::new(node_state_index as i32 * self.ptr_w as i32),
                             );
                             dsp_node_fun_params.push(func_state);
+                        }
+                        DSPNodeSigBit::MultReturnPtr => {
+                            let ret_var = self.variables.get("&rv").ok_or_else(|| {
+                                JITCompileError::UndefinedVariable("&rv".to_string())
+                            })?;
+                            dsp_node_fun_params.push(self.builder.use_var(*ret_var));
                         }
                     }
 
@@ -672,6 +711,8 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
 /// - "v" - A floating point value
 /// - "D" - The global [crate::DSPState] pointer
 /// - "S" - The node specific state pointer (`MyDSPNode`)
+/// - "M" - A pointer to the multi return value array, of type `*mut [f64; 5]`. These can be accessed
+/// by the variables "%1" to "%5" after the call.
 /// - "r" - Must be specified as last one, defines that this function returns something.
 ///
 ///
@@ -699,6 +740,7 @@ macro_rules! stateful_dsp_node_type {
                     'v' => Some(DSPNodeSigBit::Value),
                     'D' => Some(DSPNodeSigBit::DSPStatePtr),
                     'S' => Some(DSPNodeSigBit::NodeStatePtr),
+                    'M' => Some(DSPNodeSigBit::MultReturnPtr),
                     _ => None,
                 }
             }

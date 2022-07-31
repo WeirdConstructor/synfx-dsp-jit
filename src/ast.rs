@@ -47,6 +47,7 @@ impl ASTFun {
                 "&state".to_string(),
                 "&fstate".to_string(),
                 "&pv".to_string(),
+                "&rv".to_string(),
             ],
             locals: vec![], // vec!["x".to_string(), "y".to_string()],
             ast,

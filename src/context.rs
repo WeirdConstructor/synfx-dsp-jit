@@ -247,6 +247,7 @@ pub struct DSPFunction {
             *mut DSPState,
             *mut *mut u8,
             *mut f64,
+            *mut f64,
         ) -> f64,
     >,
 }
@@ -289,6 +290,7 @@ impl DSPFunction {
                     *mut f64,
                     *mut DSPState,
                     *mut *mut u8,
+                    *mut f64,
                     *mut f64,
                 ) -> f64,
             >(function)
@@ -433,6 +435,7 @@ impl DSPFunction {
         let (srate, israte) = unsafe { ((*self.state).srate, (*self.state).israte) };
         let states_ptr: *mut *mut u8 = self.node_states.as_mut_ptr();
         let pers_vars_ptr: *mut f64 = self.persistent_vars.as_mut_ptr();
+        let mut multi_returns = [0.0; 5];
         let ret = (unsafe { self.function.unwrap_unchecked() })(
             in1,
             in2,
@@ -447,6 +450,7 @@ impl DSPFunction {
             self.state,
             states_ptr,
             pers_vars_ptr,
+            (&mut multi_returns) as *mut f64
         );
         ret
     }
@@ -506,9 +510,14 @@ pub struct DSPState {
 /// for the JIT compiler.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DSPNodeSigBit {
+    /// Signature placeholder for f64
     Value,
+    /// Signature placeholder for the [DSPState] pointer
     DSPStatePtr,
+    /// Signature placeholder for the [DSPNodeState] pointer that belongs to this node
     NodeStatePtr,
+    /// Signature placeholder for a pointer to the multi return value array (max size is 5! `*mut [f64; 5]`)
+    MultReturnPtr,
 }
 
 /// This trait allows you to define your own DSP stateful and stateless primitives.

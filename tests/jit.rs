@@ -332,6 +332,34 @@ fn check_persistent_vars() {
 }
 
 #[test]
+fn check_multi_returns() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    let lib = get_default_library();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = jit
+        .compile(ASTFun::new(stmts(&[
+            assign("&sig1", call("test", 1, &[literal(1.0)])),
+            assign("&sig2", var("%3")),
+            op_add(
+                op_add(var("%1"), var("%2")),
+                op_add(var("%4"), var("%5"))),
+        ])))
+        .unwrap();
+
+    code.init(44100.0, None);
+
+    let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 10001.0);
+    assert_float_eq!(s2, 92.2);
+    assert_float_eq!(ret, 90.4 + 91.3 + 93.1 + 94.0);
+
+    dsp_ctx.borrow_mut().free();
+}
+
+#[test]
 fn check_phasor_example() {
     use synfx_dsp_jit::build::*;
 

@@ -25,11 +25,16 @@ impl Default for TSTState {
     }
 }
 
-pub extern "C" fn test(x: f64, state: *mut DSPState, mystate: *mut u8) -> f64 {
+pub extern "C" fn test(x: f64, state: *mut DSPState, mystate: *mut u8, retvars: *mut [f64; 5]) -> f64 {
     unsafe {
         let p = mystate as *mut TSTState;
         (*state).x = x * 22.0;
         (*state).y = (*p).l;
+        (*retvars)[0] = 90.4;
+        (*retvars)[1] = 91.3;
+        (*retvars)[2] = 92.2;
+        (*retvars)[3] = 93.1;
+        (*retvars)[4] = 94.0;
     };
     x * 10000.0 + 1.0
 }
@@ -50,6 +55,7 @@ impl DSPNodeType for TestNodeType {
             0 => Some(DSPNodeSigBit::Value),
             1 => Some(DSPNodeSigBit::DSPStatePtr),
             2 => Some(DSPNodeSigBit::NodeStatePtr),
+            3 => Some(DSPNodeSigBit::MultReturnPtr),
             _ => None,
         }
     }
