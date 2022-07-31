@@ -23,9 +23,10 @@ a (growing) standard library of common DSP algorithms.
 All this means this library is primarily directed towards the use case within a real time
 synthesis environment.
 
-You can practically build a JIT compiled [Pure Data](https://puredata.info/)
-or [SuperCollider](https://supercollider.github.io/) with this. Other notable
-projects in this direction are:
+You can practically build your own JIT compiled [Pure Data](https://puredata.info/) or
+[SuperCollider](https://supercollider.github.io/) clone with this. In case you
+put in the work of implementing all the DSP nodes and put a compiler on top of
+this JIT of course. Other notable projects in this direction are:
 
 - BitWig's "The Grid", which seems to use LLVM under the hood, either to AOT compiler the devices
 or even JIT compiling the Grid itself (I'm not sure about that).
