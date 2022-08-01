@@ -34,7 +34,7 @@ extern "C" fn process_accum_nod(v: f64, r: f64, state: *mut AccumNodeState) -> f
 }
 
 stateful_dsp_node_type! {
-    AccumNodeType, AccumNodeState => process_accum_nod "accum" "vSr"
+    AccumNodeType, AccumNodeState => process_accum_nod "accum" "vvSr"
     doc
     "This is a simple accumulator. It sums up it's input and returns it. \
      You can reset it's state if you pass a value >= 0.5 into 'reset'."

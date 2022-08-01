@@ -415,3 +415,39 @@ fn check_documentation_exists() {
     assert_eq!(nt.output_names(0), Some("sum"));
     assert_eq!(nt.output_names(1), None);
 }
+
+#[test]
+fn check_node_accum() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    let lib = get_default_library();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = jit
+        .compile(ASTFun::new(stmts(&[
+            assign("&sig1", call("accum", 1, &[literal(0.1), literal(0.0)])),
+        ])))
+        .unwrap();
+
+    code.init(44100.0, None);
+
+    let (_s1, _s2, _ret) = code.exec_2in_2out(0.0, 0.0);
+    let (_s1, _s2, _ret) = code.exec_2in_2out(0.0, 0.0);
+    let (s1, _s2, _ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.3);
+
+    let old_code = code;
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = jit
+        .compile(ASTFun::new(stmts(&[
+            assign("&sig1", call("accum", 1, &[literal(0.1), literal(1.0)])),
+        ])))
+        .unwrap();
+
+    code.init(44100.0, Some(&old_code));
+    let (s1, _s2, _ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.0);
+
+    dsp_ctx.borrow_mut().free();
+}

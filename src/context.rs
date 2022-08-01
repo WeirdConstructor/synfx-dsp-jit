@@ -520,7 +520,7 @@ impl DSPFunction {
     /// use synfx_dsp_jit::build::*;
     /// use synfx_dsp_jit::stdlib::AccumNodeState;
     ///
-    /// let (ctx, mut fun) = instant_compile_ast(call("accum", 21, &[var("in1")])).unwrap();
+    /// let (ctx, mut fun) = instant_compile_ast(call("accum", 21, &[var("in1"), literal(0.0)])).unwrap();
     ///
     /// fun.init(44100.0, None);
     /// // Accumulate 42.0 here:
