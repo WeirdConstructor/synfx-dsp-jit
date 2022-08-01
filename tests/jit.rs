@@ -253,6 +253,9 @@ extern "C" fn process_my_dsp_node(my_state: *mut MyDSPNode) -> f64 {
 
 synfx_dsp_jit::stateful_dsp_node_type! {
     DIYNodeType, MyDSPNode => process_my_dsp_node "my_dsp" "Sr"
+    doc "Simple counter node. Counts in increments of 1.0 each time it's called."
+    inputs
+    outputs 0 "sum"
 }
 
 #[test]
@@ -343,9 +346,7 @@ fn check_multi_returns() {
         .compile(ASTFun::new(stmts(&[
             assign("&sig1", call("test", 1, &[literal(1.0)])),
             assign("&sig2", var("%3")),
-            op_add(
-                op_add(var("%1"), var("%2")),
-                op_add(var("%4"), var("%5"))),
+            op_add(op_add(var("%1"), var("%2")), op_add(var("%4"), var("%5"))),
         ])))
         .unwrap();
 
@@ -400,4 +401,17 @@ fn check_phasor_example() {
     assert_float_eq!(out[9], 0.8058);
 
     dsp_ctx.borrow_mut().free();
+}
+
+#[test]
+fn check_documentation_exists() {
+    let lib = get_default_library();
+    let nt = lib.borrow().get_type_by_name("accum").expect("Type 'accum' exists");
+    assert!(nt.documentation().find("reset").is_some());
+    assert_eq!(nt.input_names(0), Some("input"));
+    assert_eq!(nt.input_names(1), Some("reset"));
+    assert_eq!(nt.input_names(2), None);
+    assert_eq!(nt.input_index_by_name("reset"), Some(1));
+    assert_eq!(nt.output_names(0), Some("sum"));
+    assert_eq!(nt.output_names(1), None);
 }

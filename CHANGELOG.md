@@ -3,6 +3,8 @@
 
 * Bugfix: There was a bug in persistent variable handling, when there were
 less persistent variables in the new DSPFunction.
+* Feature: Added documentation functions to the `DSPNodeType` trait. Also made it
+mandatory for the macro helper to define a `DSPNodeType`.
 
 0.5.2 (2022-07-31)
 ==================

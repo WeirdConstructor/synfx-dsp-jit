@@ -2,7 +2,7 @@
 // This file is a part of synfx-dsp-jit. Released under GPL-3.0-or-later.
 // See README.md and COPYING for details.
 
-use crate::{DSPNodeSigBit, DSPState, DSPNodeType, DSPNodeTypeLibrary};
+use crate::{DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary, DSPState};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -22,14 +22,26 @@ impl Default for AccumNodeState {
     }
 }
 
-extern "C" fn process_accum_nod(v: f64, state: *mut AccumNodeState) -> f64 {
+extern "C" fn process_accum_nod(v: f64, r: f64, state: *mut AccumNodeState) -> f64 {
     let mut state = unsafe { &mut *state };
-    state.value += v;
+    if r > 0.5 {
+        state.value = 0.0;
+    } else {
+        state.value += v;
+    }
     state.value
 }
 
 crate::stateful_dsp_node_type! {
     AccumNodeType, AccumNodeState => process_accum_nod "accum" "vSr"
+    doc
+    "This is a simple accumulator. It sums up it's input and returns it. \
+     You can reset it's state if you pass a value >= 0.5 into 'reset'."
+    inputs
+    0 "input"
+    1 "reset"
+    outputs
+    0 "sum"
 }
 
 #[derive(Default)]

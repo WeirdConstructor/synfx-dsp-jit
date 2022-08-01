@@ -54,7 +54,10 @@ impl DSPNodeContext {
     }
 
     /// Retrieve the index into the persistent variable vector passed in as "&pv".
-    pub(crate) fn get_persistent_variable_index(&mut self, pers_var_name: &str) -> Result<usize, String> {
+    pub(crate) fn get_persistent_variable_index(
+        &mut self,
+        pers_var_name: &str,
+    ) -> Result<usize, String> {
         let index = if let Some(index) = self.persistent_var_map.get(pers_var_name) {
             *index
         } else {
@@ -164,18 +167,25 @@ impl Drop for DSPNodeContext {
 /// This structure holds all the [DSPNodeType] definitions and provides
 /// them to the [crate::JIT] and [crate::jit::DSPFunctionTranslator].
 pub struct DSPNodeTypeLibrary {
+    type_by_name: HashMap<String, Rc<dyn DSPNodeType>>,
     types: Vec<Rc<dyn DSPNodeType>>,
 }
 
 impl DSPNodeTypeLibrary {
     /// Create a new instance of this.
     pub fn new() -> Self {
-        Self { types: vec![] }
+        Self { types: vec![], type_by_name: HashMap::new() }
     }
 
     /// Add the given [DSPNodeType] to this library.
     pub fn add(&mut self, typ: Rc<dyn DSPNodeType>) {
-        self.types.push(typ);
+        self.types.push(typ.clone());
+        self.type_by_name.insert(typ.name().to_string(), typ);
+    }
+
+    /// Retrieves a [DSPNodeType] by it's name.
+    pub fn get_type_by_name(&self, typ_name: &str) -> Option<Rc<dyn DSPNodeType>> {
+        self.type_by_name.get(typ_name).cloned()
     }
 
     /// Iterate through all types in the Library:
@@ -199,6 +209,154 @@ impl DSPNodeTypeLibrary {
         }
         Ok(())
     }
+}
+
+/// This macro can help you defining new stateful DSP nodes.
+/// See also the [doc_node_type] macro for helping with documentation.
+///
+///```
+/// use synfx_dsp_jit::*;
+///
+/// struct MyDSPNode {
+///     value: f64,
+/// }
+///
+/// impl MyDSPNode {
+///     fn reset(&mut self, _state: &mut DSPState) {
+///         *self = Self::default();
+///     }
+/// }
+///
+/// impl Default for MyDSPNode {
+///     fn default() -> Self {
+///         Self { value: 0.0 }
+///     }
+/// }
+///
+/// extern "C" fn process_my_dsp_node(my_state: *mut MyDSPNode) -> f64 {
+///     let mut my_state = unsafe { &mut *my_state };
+///     my_state.value += 1.0;
+///     my_state.value
+/// }
+///
+/// // DIYNodeType is the type that is newly defined here, that one you
+/// // pass to DSPNodeTypeLibrary::add
+/// synfx_dsp_jit::stateful_dsp_node_type! {
+///     DIYNodeType, MyDSPNode => process_my_dsp_node "my_dsp" "Sr"
+///     doc
+///     "This is a simple counter. It counts by increments of 1.0 everytime it's called."
+///     inputs
+///     outputs
+///     0 "sum"
+/// }
+///
+/// // Then use the type by adding it:
+/// fn make_library() -> DSPNodeTypeLibrary {
+///     let mut lib = DSPNodeTypeLibrary::new();
+///     lib.add(DIYNodeType::new_ref());
+///     lib
+/// }
+///```
+///
+/// You might've guessed, `process_my_dsp_node` is the function identifier in the Rust
+/// code. The `"my_dsp"` is the name you can use to refer to this in [ASTNode::Call]:
+/// `ASTNode::Call("my_dsp".to_string(), 1, ...)`.
+/// **Attention:** Make sure to provide unique state IDs here!
+///
+/// The `"Sr"` is a string that specifies the signature of the function. Following characters
+/// are available:
+///
+/// - "v" - A floating point value
+/// - "D" - The global [crate::DSPState] pointer
+/// - "S" - The node specific state pointer (`MyDSPNode`)
+/// - "M" - A pointer to the multi return value array, of type `*mut [f64; 5]`. These can be accessed
+/// by the variables "%1" to "%5" after the call.
+/// - "r" - Must be specified as last one, defines that this function returns something.
+///
+#[macro_export]
+macro_rules! stateful_dsp_node_type {
+    ($node_type: ident, $struct_type: ident =>
+     $func_name: ident $jit_name: literal $signature: literal
+     doc $doc: literal
+     inputs $($idx: literal $inp: literal)*
+     outputs $($idxo: literal $out: literal)*) => {
+        struct $node_type;
+        impl $node_type {
+            fn new_ref() -> std::rc::Rc<Self> {
+                std::rc::Rc::new(Self {})
+            }
+        }
+        impl DSPNodeType for $node_type {
+            fn name(&self) -> &str {
+                $jit_name
+            }
+
+            fn function_ptr(&self) -> *const u8 {
+                $func_name as *const u8
+            }
+
+            fn signature(&self, i: usize) -> Option<DSPNodeSigBit> {
+                match $signature.chars().nth(i).unwrap() {
+                    'v' => Some(DSPNodeSigBit::Value),
+                    'D' => Some(DSPNodeSigBit::DSPStatePtr),
+                    'S' => Some(DSPNodeSigBit::NodeStatePtr),
+                    'M' => Some(DSPNodeSigBit::MultReturnPtr),
+                    _ => None,
+                }
+            }
+
+            fn has_return_value(&self) -> bool {
+                $signature.find("r").is_some()
+            }
+
+            fn reset_state(&self, dsp_state: *mut DSPState, state_ptr: *mut u8) {
+                let ptr = state_ptr as *mut $struct_type;
+                unsafe {
+                    (*ptr).reset(&mut (*dsp_state));
+                }
+            }
+
+            fn allocate_state(&self) -> Option<*mut u8> {
+                Some(Box::into_raw(Box::new($struct_type::default())) as *mut u8)
+            }
+
+            fn deallocate_state(&self, ptr: *mut u8) {
+                unsafe { Box::from_raw(ptr as *mut $struct_type) };
+            }
+
+            fn documentation(&self) -> &str {
+                $doc
+            }
+
+            fn input_names(&self, index: usize) -> Option<&str> {
+                match index {
+                    $($idx => Some($inp),)*
+                    _ => None
+                }
+            }
+
+            fn input_index_by_name(&self, name: &str) -> Option<usize> {
+                match name {
+                    $($inp => Some($idx),)*
+                    _ => None
+                }
+            }
+
+            fn output_names(&self, index: usize) -> Option<&str> {
+                match index {
+                    $($idxo => Some($out),)*
+                    _ => None
+                }
+            }
+
+            fn output_index_by_name(&self, name: &str) -> Option<usize> {
+                match name {
+                    $($out => Some($idxo),)*
+                    _ => None
+                }
+            }
+        }
+    };
 }
 
 /// This is the result of the JIT compiled [crate::ast::ASTNode] tree.
@@ -308,8 +466,7 @@ impl DSPFunction {
             let prev_len = previous_function.persistent_vars.len();
             let now_len = self.persistent_vars.len();
             let len = prev_len.min(now_len);
-            self.persistent_vars[0..len]
-                .copy_from_slice(&previous_function.persistent_vars[0..len])
+            self.persistent_vars[0..len].copy_from_slice(&previous_function.persistent_vars[0..len])
         }
 
         unsafe {
@@ -452,7 +609,7 @@ impl DSPFunction {
             self.state,
             states_ptr,
             pers_vars_ptr,
-            (&mut multi_returns) as *mut f64
+            (&mut multi_returns) as *mut f64,
         );
         ret
     }
@@ -683,6 +840,63 @@ pub trait DSPNodeType {
     /// The name of this DSP node, by this name it can be called from
     /// the [crate::ast::ASTFun].
     fn name(&self) -> &str;
+
+    /// Document what this node does and how to use it.
+    /// Format should be in Markdown.
+    ///
+    /// Documenting the node will make it easier for library implementors
+    /// and even eventual end users to figure out what this node
+    /// does and how to use it.
+    ///
+    /// For instance, this text should define what the input and output
+    /// parameters do. And also define which value ranges these operate in.
+    fn documentation(&self) -> &str {
+        "undocumented"
+    }
+
+    /// Returns the name of each input port of this node.
+    /// Choose descriptive but short names.
+    /// These names will be used by compiler frontends to identify the ports,
+    /// and it will make it easier to stay compatible if indices change.
+    fn input_names(&self, _index: usize) -> Option<&str> {
+        None
+    }
+
+    /// Returns the name of each output port of this node.
+    /// Choose descriptive but short names.
+    /// These names will be used by compiler frontends to identify the ports,
+    /// and it will make it easier to stay compatible if indices change.
+    fn output_names(&self, _index: usize) -> Option<&str> {
+        None
+    }
+
+    /// Returns the index of the output by it's name.
+    fn input_index_by_name(&self, name: &str) -> Option<usize> {
+        let mut i = 0;
+
+        while let Some(iname) = self.input_names(i) {
+            if iname == name {
+                return Some(i);
+            }
+            i += 1;
+        }
+
+        None
+    }
+
+    /// Returns the index of the output by it's name.
+    fn output_index_by_name(&self, name: &str) -> Option<usize> {
+        let mut i = 0;
+
+        while let Some(oname) = self.output_names(i) {
+            if oname == name {
+                return Some(i);
+            }
+            i += 1;
+        }
+
+        None
+    }
 
     /// The function pointer that should be inserted.
     fn function_ptr(&self) -> *const u8;
