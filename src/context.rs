@@ -306,8 +306,10 @@ impl DSPFunction {
     pub fn init(&mut self, srate: f64, previous_function: Option<&DSPFunction>) {
         if let Some(previous_function) = previous_function {
             let prev_len = previous_function.persistent_vars.len();
-            self.persistent_vars[0..prev_len]
-                .copy_from_slice(&previous_function.persistent_vars[0..prev_len])
+            let now_len = self.persistent_vars.len();
+            let len = prev_len.min(now_len);
+            self.persistent_vars[0..len]
+                .copy_from_slice(&previous_function.persistent_vars[0..len])
         }
 
         unsafe {

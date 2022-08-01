@@ -1,3 +1,9 @@
+0.5.3 (unreleased)
+==================
+
+* Bugfix: There was a bug in persistent variable handling, when there were
+less persistent variables in the new DSPFunction.
+
 0.5.2 (2022-07-31)
 ==================
 
