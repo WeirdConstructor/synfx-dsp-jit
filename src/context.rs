@@ -898,6 +898,24 @@ pub trait DSPNodeType {
         None
     }
 
+    /// Number of input ports
+    fn input_count(&self) -> usize {
+        let mut i = 0;
+        while self.input_names(i).is_some() {
+            i += 1;
+        }
+        i
+    }
+
+    /// Number of output ports
+    fn output_count(&self) -> usize {
+        let mut i = 0;
+        while self.output_names(i).is_some() {
+            i += 1;
+        }
+        i
+    }
+
     /// The function pointer that should be inserted.
     fn function_ptr(&self) -> *const u8;
 
