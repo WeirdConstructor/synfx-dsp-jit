@@ -916,6 +916,20 @@ pub trait DSPNodeType {
         i
     }
 
+    /// Returns true if this node type requires state.
+    fn is_stateful(&self) -> bool {
+        let mut i = 0;
+        while let Some(sig) = self.signature(i) {
+            if let DSPNodeSigBit::NodeStatePtr = sig {
+                return true;
+            }
+
+            i += 1;
+        }
+
+        false
+    }
+
     /// The function pointer that should be inserted.
     fn function_ptr(&self) -> *const u8;
 
