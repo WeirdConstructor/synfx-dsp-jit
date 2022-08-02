@@ -451,3 +451,42 @@ fn check_node_accum() {
 
     dsp_ctx.borrow_mut().free();
 }
+
+#[test]
+fn check_persistent_var_access() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    let lib = get_default_library();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = jit
+        .compile(ASTFun::new(stmts(&[
+            assign("*test", literal(11.0)),
+            op_add(var("*ofof"), var("*iiii")),
+        ])))
+        .unwrap();
+
+    code.init(44100.0, None);
+
+    let (_, _, ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(ret, 0.0);
+
+    let index_test = dsp_ctx.borrow().get_persistent_variable_index_by_name("*test").unwrap();
+    let test_value = code.access_persistent_var(index_test).map(|var| *var).unwrap();
+    assert_float_eq!(test_value, 11.0);
+
+    let index_iiii = dsp_ctx.borrow().get_persistent_variable_index_by_name("*iiii").unwrap();
+    let index_ofof = dsp_ctx.borrow().get_persistent_variable_index_by_name("*ofof").unwrap();
+    code.access_persistent_var(index_iiii).map(|var| *var = 99.0);
+
+    let (_, _, ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(ret, 99.0);
+
+    code.access_persistent_var(index_ofof).map(|var| *var = 1.5);
+
+    let (_, _, ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(ret, 100.5);
+
+    dsp_ctx.borrow_mut().free();
+}

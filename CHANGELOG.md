@@ -5,6 +5,8 @@
 less persistent variables in the new DSPFunction.
 * Feature: Added documentation functions to the `DSPNodeType` trait. Also made it
 mandatory for the macro helper to define a `DSPNodeType`.
+* Feature: Added access to persistent variables via DSPFunction::access_persistent_var
+and DSPNodeContext::get_persistent_variable_index_by_name.
 
 0.5.2 (2022-07-31)
 ==================

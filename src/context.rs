@@ -53,6 +53,12 @@ impl DSPNodeContext {
         self.next_dsp_fun = Some(Box::new(DSPFunction::new(self.state, self.generation)));
     }
 
+    /// Retrieve the index into the most recently compiled [DSPFunction].
+    /// To be used by [DSPFunction::access_persistent_var].
+    pub fn get_persistent_variable_index_by_name(&self, pers_var_name: &str) -> Option<usize> {
+        self.persistent_var_map.get(pers_var_name).map(|i| *i)
+    }
+
     /// Retrieve the index into the persistent variable vector passed in as "&pv".
     pub(crate) fn get_persistent_variable_index(
         &mut self,
@@ -633,6 +639,12 @@ impl DSPFunction {
         if idx >= self.persistent_vars.len() {
             self.persistent_vars.resize(idx + 1, 0.0);
         }
+    }
+
+    /// Gives you access to the persistent variables. To get the index of the
+    /// persistent variable you must use [DSPNodeContext::get_persistent_variable_index_by_name].
+    pub fn access_persistent_var(&mut self, idx: usize) -> Option<&mut f64> {
+        self.persistent_vars.get_mut(idx)
     }
 
     /// Checks if the DSP function actually has the state for a certain unique DSP node state ID.
