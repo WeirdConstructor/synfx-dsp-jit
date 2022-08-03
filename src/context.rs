@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem;
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// This table holds all the DSP state including the state of the individual DSP nodes
 /// that were created by the [crate::jit::DSPFunctionTranslator].
@@ -86,7 +87,7 @@ impl DSPNodeContext {
     /// code can index into that vector to find the right state pointer.
     pub(crate) fn add_dsp_node_instance(
         &mut self,
-        node_type: Rc<dyn DSPNodeType>,
+        node_type: Arc<dyn DSPNodeType>,
         dsp_node_uid: u64,
     ) -> Result<usize, String> {
         if let Some(next_dsp_fun) = &mut self.next_dsp_fun {
@@ -173,8 +174,8 @@ impl Drop for DSPNodeContext {
 /// This structure holds all the [DSPNodeType] definitions and provides
 /// them to the [crate::JIT] and [crate::jit::DSPFunctionTranslator].
 pub struct DSPNodeTypeLibrary {
-    type_by_name: HashMap<String, Rc<dyn DSPNodeType>>,
-    types: Vec<Rc<dyn DSPNodeType>>,
+    type_by_name: HashMap<String, Arc<dyn DSPNodeType>>,
+    types: Vec<Arc<dyn DSPNodeType>>,
 }
 
 impl DSPNodeTypeLibrary {
@@ -184,13 +185,13 @@ impl DSPNodeTypeLibrary {
     }
 
     /// Add the given [DSPNodeType] to this library.
-    pub fn add(&mut self, typ: Rc<dyn DSPNodeType>) {
+    pub fn add(&mut self, typ: Arc<dyn DSPNodeType>) {
         self.types.push(typ.clone());
         self.type_by_name.insert(typ.name().to_string(), typ);
     }
 
     /// Retrieves a [DSPNodeType] by it's name.
-    pub fn get_type_by_name(&self, typ_name: &str) -> Option<Rc<dyn DSPNodeType>> {
+    pub fn get_type_by_name(&self, typ_name: &str) -> Option<Arc<dyn DSPNodeType>> {
         self.type_by_name.get(typ_name).cloned()
     }
 
@@ -206,7 +207,7 @@ impl DSPNodeTypeLibrary {
     ///     Ok(())
     /// }).expect("no error");
     ///```
-    pub fn for_each<T, F: FnMut(&Rc<dyn DSPNodeType>) -> Result<(), T>>(
+    pub fn for_each<T, F: FnMut(&Arc<dyn DSPNodeType>) -> Result<(), T>>(
         &self,
         mut f: F,
     ) -> Result<(), T> {
@@ -288,8 +289,8 @@ macro_rules! stateful_dsp_node_type {
      outputs $($idxo: literal $out: literal)*) => {
         struct $node_type;
         impl $node_type {
-            fn new_ref() -> std::rc::Rc<Self> {
-                std::rc::Rc::new(Self {})
+            fn new_ref() -> std::sync::Arc<Self> {
+                std::sync::Arc::new(Self {})
             }
         }
         impl DSPNodeType for $node_type {
@@ -379,7 +380,7 @@ pub struct DSPFunction {
     state: *mut DSPState,
     /// Contains the types of the corresponding `node_states`. The [DSPNodeType] is
     /// necessary to reset the state pointed to by the pointers in `node_states`.
-    node_state_types: Vec<Rc<dyn DSPNodeType>>,
+    node_state_types: Vec<Arc<dyn DSPNodeType>>,
     /// Contains the actual pointers to the state that was constructed by the corresponding [DSPNodeState].
     node_states: Vec<*mut u8>,
     /// Constains indices into `node_states`, so that they can be reset/initialized by [DSPFunction::init].
@@ -417,6 +418,7 @@ pub struct DSPFunction {
 }
 
 unsafe impl Send for DSPFunction {}
+unsafe impl Sync for DSPFunction {}
 
 impl DSPFunction {
     /// Used by [DSPNodeContext] to create a new instance of this.
@@ -734,7 +736,7 @@ pub enum DSPNodeSigBit {
 ///     // a stateless primitive.
 /// }
 ///
-/// lib.borrow_mut().add(Rc::new(MyPrimitive {}));
+/// lib.borrow_mut().add(std::sync::Arc::new(MyPrimitive {}));
 ///
 /// use synfx_dsp_jit::{ASTFun, JIT, DSPNodeContext};
 /// let ctx = DSPNodeContext::new_ref();
@@ -818,7 +820,7 @@ pub enum DSPNodeSigBit {
 ///     }
 /// }
 ///
-/// lib.borrow_mut().add(Rc::new(MyPrimitive {}));
+/// lib.borrow_mut().add(std::sync::Arc::new(MyPrimitive {}));
 ///
 /// use synfx_dsp_jit::{ASTFun, JIT, DSPNodeContext};
 /// let ctx = DSPNodeContext::new_ref();
@@ -848,7 +850,7 @@ pub enum DSPNodeSigBit {
 ///
 /// ctx.borrow_mut().free();
 ///```
-pub trait DSPNodeType {
+pub trait DSPNodeType : Sync + Send {
     /// The name of this DSP node, by this name it can be called from
     /// the [crate::ast::ASTFun].
     fn name(&self) -> &str;
@@ -986,7 +988,7 @@ pub(crate) struct DSPNodeState {
     /// ASTs.
     uid: u64,
     /// Holds the type of this piece of state.
-    node_type: Rc<dyn DSPNodeType>,
+    node_type: Arc<dyn DSPNodeType>,
     /// A pointer to the allocated piece of state. It will be shared
     /// with the execution thread. So you must not touch the data that is referenced
     /// here.
@@ -1004,7 +1006,7 @@ pub(crate) struct DSPNodeState {
 
 impl DSPNodeState {
     /// Creates a fresh piece of DSP node state.
-    pub(crate) fn new(uid: u64, node_type: Rc<dyn DSPNodeType>) -> Self {
+    pub(crate) fn new(uid: u64, node_type: Arc<dyn DSPNodeType>) -> Self {
         Self {
             uid,
             node_type: node_type.clone(),
@@ -1050,7 +1052,7 @@ impl DSPNodeState {
     }
 
     /// Returns the [DSPNodeType] for this [DSPNodeState].
-    pub(crate) fn node_type(&self) -> Rc<dyn DSPNodeType> {
+    pub(crate) fn node_type(&self) -> Arc<dyn DSPNodeType> {
         self.node_type.clone()
     }
 }

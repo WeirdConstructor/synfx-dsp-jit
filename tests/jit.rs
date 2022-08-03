@@ -12,7 +12,7 @@ use test_node_type::TSTState;
 
 fn get_default_library() -> Rc<RefCell<DSPNodeTypeLibrary>> {
     let lib = get_standard_library();
-    lib.borrow_mut().add(Rc::new(test_node_type::TestNodeType::default()));
+    lib.borrow_mut().add(std::sync::Arc::new(test_node_type::TestNodeType::default()));
     lib
 }
 

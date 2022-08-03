@@ -15,6 +15,7 @@ use cranelift_module::{FuncId, Linkage, Module};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// The Just In Time compiler, that translates a [crate::ASTNode] tree into
 /// machine code in form of a [DSPFunction] structure you can use to execute it.
@@ -194,7 +195,7 @@ pub(crate) struct DSPFunctionTranslator<'a, 'b, 'c> {
     variables: HashMap<String, Variable>,
     var_index: usize,
     module: &'a mut JITModule,
-    dsp_node_functions: HashMap<String, (Rc<dyn DSPNodeType>, FuncId)>,
+    dsp_node_functions: HashMap<String, (Arc<dyn DSPNodeType>, FuncId)>,
     ptr_w: u32,
 }
 

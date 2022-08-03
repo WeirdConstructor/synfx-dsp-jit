@@ -3,6 +3,8 @@
 
 * Bugfix: There was a bug in persistent variable handling, when there were
 less persistent variables in the new DSPFunction.
+* Bugfix: I've implemented now Sync too for the DSPFunction. Even though it's not
+safe to do that. But it is required by some plugin APIs.
 * Feature: Added documentation functions to the `DSPNodeType` trait. Also made it
 mandatory for the macro helper to define a `DSPNodeType`.
 * Feature: Added access to persistent variables via DSPFunction::access_persistent_var

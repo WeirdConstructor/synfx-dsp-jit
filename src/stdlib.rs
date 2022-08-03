@@ -6,6 +6,7 @@ use crate::stateful_dsp_node_type;
 use crate::{DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary, DSPState};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct AccumNodeState {
     pub value: f64,
@@ -80,7 +81,7 @@ impl DSPNodeType for SinNodeType {
 /// Or extend this one using the [DSPNodeType] trait.
 pub fn get_standard_library() -> Rc<RefCell<DSPNodeTypeLibrary>> {
     let lib = Rc::new(RefCell::new(DSPNodeTypeLibrary::new()));
-    lib.borrow_mut().add(Rc::new(SinNodeType::default()));
+    lib.borrow_mut().add(Arc::new(SinNodeType::default()));
     lib.borrow_mut().add(AccumNodeType::new_ref());
     lib
 }
