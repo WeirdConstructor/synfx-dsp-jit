@@ -3,6 +3,7 @@
 // See README.md and COPYING for details.
 
 use crate::stateful_dsp_node_type;
+use crate::stateless_dsp_node_type;
 use crate::{DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary, DSPState};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -46,32 +47,37 @@ stateful_dsp_node_type! {
     0 "sum"
 }
 
-#[derive(Default)]
-struct SinNodeType;
-
-extern "C" fn jit_sin(v: f64) -> f64 {
+extern "C" fn process_sin(v: f64) -> f64 {
     v.sin()
 }
 
-impl DSPNodeType for SinNodeType {
-    fn name(&self) -> &str {
-        "sin"
-    }
+stateless_dsp_node_type! {
+    SinNodeType => process_sin "sin" "vr"
+    doc
+    "This is a sine function. Input is in radians."
+    inputs
+    0 ""
+    outputs
+    0 ""
+}
 
-    fn function_ptr(&self) -> *const u8 {
-        jit_sin as *const u8
+extern "C" fn process_divrem(a: f64, b: f64, retvars: *mut [f64; 5]) -> f64 {
+    unsafe {
+        (*retvars)[0] = a % b;
     }
+    a / b
+}
 
-    fn signature(&self, i: usize) -> Option<DSPNodeSigBit> {
-        match i {
-            0 => Some(DSPNodeSigBit::Value),
-            _ => None,
-        }
-    }
-
-    fn has_return_value(&self) -> bool {
-        true
-    }
+stateless_dsp_node_type! {
+    DivRemNodeType => process_divrem "/%" "vvMr"
+    doc
+    "Computes the float division and remainder of a / b"
+    inputs
+    0 "a"
+    1 "b"
+    outputs
+    0 "div"
+    1 "rem"
 }
 
 /// Creates a [crate::context::DSPNodeTypeLibrary] that contains a bunch of
@@ -83,5 +89,6 @@ pub fn get_standard_library() -> Rc<RefCell<DSPNodeTypeLibrary>> {
     let lib = Rc::new(RefCell::new(DSPNodeTypeLibrary::new()));
     lib.borrow_mut().add(Arc::new(SinNodeType::default()));
     lib.borrow_mut().add(AccumNodeType::new_ref());
+    lib.borrow_mut().add(DivRemNodeType::new_ref());
     lib
 }

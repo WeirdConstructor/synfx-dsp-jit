@@ -7,8 +7,10 @@ less persistent variables in the new DSPFunction.
 safe to do that. But it is required by some plugin APIs.
 * Feature: Added documentation functions to the `DSPNodeType` trait. Also made it
 mandatory for the macro helper to define a `DSPNodeType`.
-* Feature: Added access to persistent variables via DSPFunction::access_persistent_var
-and DSPNodeContext::get_persistent_variable_index_by_name.
+* Feature: Added access to persistent variables via DSPFunction::access\_persistent\_var
+and DSPNodeContext::get\_persistent\_variable\_index\_by\_name.
+* Feature: Added stateless_dsp_node_type.
+* Feature: Added /% node to stdlib.
 
 0.5.2 (2022-07-31)
 ==================

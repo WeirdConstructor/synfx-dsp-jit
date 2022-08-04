@@ -490,3 +490,27 @@ fn check_persistent_var_access() {
 
     dsp_ctx.borrow_mut().free();
 }
+
+#[test]
+fn check_stdlib_divrem() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    let lib = get_default_library();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = jit
+        .compile(ASTFun::new(stmts(&[
+            assign("&sig1", call("/%", 1, &[literal(3.4), literal(2.0)])),
+            assign("&sig2", var("%1"))
+        ])))
+        .unwrap();
+
+    code.init(44100.0, None);
+
+    let (s1, s2, _ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 1.7);
+    assert_float_eq!(s2, 1.4);
+
+    dsp_ctx.borrow_mut().free();
+}

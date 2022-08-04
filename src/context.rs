@@ -219,7 +219,6 @@ impl DSPNodeTypeLibrary {
 }
 
 /// This macro can help you defining new stateful DSP nodes.
-/// See also the [doc_node_type] macro for helping with documentation.
 ///
 ///```
 /// use synfx_dsp_jit::*;
@@ -329,6 +328,114 @@ macro_rules! stateful_dsp_node_type {
 
             fn deallocate_state(&self, ptr: *mut u8) {
                 unsafe { Box::from_raw(ptr as *mut $struct_type) };
+            }
+
+            fn documentation(&self) -> &str {
+                $doc
+            }
+
+            fn input_names(&self, index: usize) -> Option<&str> {
+                match index {
+                    $($idx => Some($inp),)*
+                    _ => None
+                }
+            }
+
+            fn input_index_by_name(&self, name: &str) -> Option<usize> {
+                match name {
+                    $($inp => Some($idx),)*
+                    _ => None
+                }
+            }
+
+            fn output_names(&self, index: usize) -> Option<&str> {
+                match index {
+                    $($idxo => Some($out),)*
+                    _ => None
+                }
+            }
+
+            fn output_index_by_name(&self, name: &str) -> Option<usize> {
+                match name {
+                    $($out => Some($idxo),)*
+                    _ => None
+                }
+            }
+        }
+    };
+}
+
+/// This macro can help you defining new stateless DSP nodes.
+///
+///```
+/// use synfx_dsp_jit::*;
+///
+/// extern "C" fn process_mul2(v: f64) -> f64 {
+///     v * 2.0
+/// }
+///
+/// synfx_dsp_jit::stateless_dsp_node_type! {
+///     Mul2NodeType => process_my_dsp_node "mul2" "vr"
+///     doc
+///     "A simple multiplication by 2.0. Using '*' is simpler thought..."
+///     inputs
+///     0 ""
+///     outputs
+///     0 ""
+/// }
+///
+/// // Then use the type by adding it:
+/// fn make_library() -> DSPNodeTypeLibrary {
+///     let mut lib = DSPNodeTypeLibrary::new();
+///     lib.add(Mul2NodeType::new_ref());
+///     lib
+/// }
+///```
+///
+/// The `"vr"` is a string that specifies the signature of the function. Following characters
+/// are available:
+///
+/// - "v" - A floating point value
+/// - "D" - The global [crate::DSPState] pointer
+/// - "M" - A pointer to the multi return value array, of type `*mut [f64; 5]`. These can be accessed
+/// by the variables "%1" to "%5" after the call.
+/// - "r" - Must be specified as last one, defines that this function returns something.
+///
+#[macro_export]
+macro_rules! stateless_dsp_node_type {
+    ($node_type: ident =>
+     $func_name: ident $jit_name: literal $signature: literal
+     doc $doc: literal
+     inputs $($idx: literal $inp: literal)*
+     outputs $($idxo: literal $out: literal)*) => {
+        #[derive(Default)]
+        struct $node_type;
+        impl $node_type {
+            #[allow(dead_code)]
+            fn new_ref() -> std::sync::Arc<Self> {
+                std::sync::Arc::new(Self {})
+            }
+        }
+        impl DSPNodeType for $node_type {
+            fn name(&self) -> &str {
+                $jit_name
+            }
+
+            fn function_ptr(&self) -> *const u8 {
+                $func_name as *const u8
+            }
+
+            fn signature(&self, i: usize) -> Option<DSPNodeSigBit> {
+                match $signature.chars().nth(i).unwrap() {
+                    'v' => Some(DSPNodeSigBit::Value),
+                    'D' => Some(DSPNodeSigBit::DSPStatePtr),
+                    'M' => Some(DSPNodeSigBit::MultReturnPtr),
+                    _ => None,
+                }
+            }
+
+            fn has_return_value(&self) -> bool {
+                $signature.find("r").is_some()
             }
 
             fn documentation(&self) -> &str {
