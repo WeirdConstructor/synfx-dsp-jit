@@ -119,11 +119,19 @@ assert!((out[3] - 0.4766).abs() < 0.0001);
 ctx.borrow_mut().free();
 ```
 
+## DSP Engine API
+
+The [synfx_dsp_jit::engine::CodeEngine] API is a convenience API for dealing with
+an audio/real time thread. When you want to compile the function on some non real time thread
+like a GUI or worker thread, and use the resulting DSP function in an audio thread to produce
+audio samples.
+
 */
 
 mod ast;
 mod context;
 mod jit;
+pub mod engine;
 pub mod stdlib;
 
 pub use ast::{build, ASTBinOp, ASTFun, ASTNode};

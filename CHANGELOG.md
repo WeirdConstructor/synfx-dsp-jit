@@ -13,6 +13,7 @@ and DSPNodeContext::get\_persistent\_variable\_index\_by\_name.
 * Feature: Added stateless\_dsp\_node\_type.
 * Feature: Added '/%' node to stdlib.
 * Feature: Added 'phase' node to generate a phase sawtooth signal.
+* Feature: Added CodeEngine API for compiling and uploading pieces of code to an audio thread.
 
 0.5.2 (2022-07-31)
 ==================
