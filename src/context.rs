@@ -8,6 +8,10 @@ use std::collections::HashMap;
 use std::mem;
 use std::rc::Rc;
 use std::sync::Arc;
+use synfx_dsp::AtomicFloat;
+
+/// The number of DSP atoms to reserve for the `atomw` and `atomr` nodes to read/write from/to.
+pub(crate) const MAX_DSP_ATOMS: usize = 512;
 
 /// This table holds all the DSP state including the state of the individual DSP nodes
 /// that were created by the [crate::jit::DSPFunctionTranslator].
@@ -30,16 +34,25 @@ pub struct DSPNodeContext {
     /// If [DSPNodeContext::set_debug] is enabled, this contains the most recently compiled piece
     /// of cranelift intermedite representation. You can receive this via [DSPNodeContext::get_ir_dump].
     pub(crate) cranelift_ir_dump: String,
+    /// An array of atomic floats to exchange data with the live real time thread.
+    /// These AtomicFloats will be shared via the [DSPState] structure and read/written using
+    /// the `atomw` and `atomr` nodes.
+    atoms: Vec<Arc<AtomicFloat>>,
 }
 
 impl DSPNodeContext {
     fn new() -> Self {
+        let mut atoms = vec![];
+        atoms.resize_with(MAX_DSP_ATOMS, || Arc::new(AtomicFloat::new(0.0)));
+        let atoms_state = atoms.clone();
+
         Self {
             state: Box::into_raw(Box::new(DSPState {
                 x: 0.0,
                 y: 0.0,
                 srate: 44100.0,
                 israte: 1.0 / 44100.0,
+                atoms: atoms_state,
             })),
             node_states: HashMap::new(),
             generation: 0,
@@ -48,6 +61,7 @@ impl DSPNodeContext {
             persistent_var_index: 0,
             debug_enabled: false,
             cranelift_ir_dump: String::from(""),
+            atoms,
         }
     }
 
@@ -75,6 +89,13 @@ impl DSPNodeContext {
     /// IR code for the most recently compiled [DSPFunction].
     pub fn get_ir_dump(&self) -> &str {
         &self.cranelift_ir_dump
+    }
+
+    /// Returns you a reference to the specified atom connected with the DSP backend.
+    /// These atoms can be read and written in the [DSPFunction] using the `atomr` and `atomw`
+    /// nodes.
+    pub fn atom(&self, idx: usize) -> Option<Arc<AtomicFloat>> {
+        self.atoms.get(idx).cloned()
     }
 
     /// Retrieve the index into the most recently compiled [DSPFunction].
@@ -325,11 +346,11 @@ macro_rules! stateful_dsp_node_type {
             }
 
             fn signature(&self, i: usize) -> Option<DSPNodeSigBit> {
-                match $signature.chars().nth(i).unwrap() {
-                    'v' => Some(DSPNodeSigBit::Value),
-                    'D' => Some(DSPNodeSigBit::DSPStatePtr),
-                    'S' => Some(DSPNodeSigBit::NodeStatePtr),
-                    'M' => Some(DSPNodeSigBit::MultReturnPtr),
+                match $signature.chars().nth(i) {
+                    Some('v') => Some(DSPNodeSigBit::Value),
+                    Some('D') => Some(DSPNodeSigBit::DSPStatePtr),
+                    Some('S') => Some(DSPNodeSigBit::NodeStatePtr),
+                    Some('M') => Some(DSPNodeSigBit::MultReturnPtr),
                     _ => None,
                 }
             }
@@ -449,10 +470,10 @@ macro_rules! stateless_dsp_node_type {
             }
 
             fn signature(&self, i: usize) -> Option<DSPNodeSigBit> {
-                match $signature.chars().nth(i).unwrap() {
-                    'v' => Some(DSPNodeSigBit::Value),
-                    'D' => Some(DSPNodeSigBit::DSPStatePtr),
-                    'M' => Some(DSPNodeSigBit::MultReturnPtr),
+                match $signature.chars().nth(i) {
+                    Some('v') => Some(DSPNodeSigBit::Value),
+                    Some('D') => Some(DSPNodeSigBit::DSPStatePtr),
+                    Some('M') => Some(DSPNodeSigBit::MultReturnPtr),
                     _ => None,
                 }
             }
@@ -820,6 +841,7 @@ pub struct DSPState {
     pub y: f64,
     pub srate: f64,
     pub israte: f64,
+    pub atoms: Vec<Arc<AtomicFloat>>,
 }
 
 /// An enum to specify the position of value and [DSPState] and [DSPNodeState] parameters

@@ -1,6 +1,10 @@
 0.6.0 (unreleased)
 ==================
 
+* Feature: Added reading/writing into a shared buffer of atomic floats.
+See also `DSPNodeContext::atom` and `CodeEngine::atom`. Also added an example
+that shows how to control a DSPFunction with atoms. 
+
 0.5.3 (2022-08-05)
 ==================
 

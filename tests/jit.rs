@@ -565,3 +565,91 @@ fn check_stdlib_phase() {
 
     dsp_ctx.borrow_mut().free();
 }
+
+
+#[test]
+fn check_stdlib_atomr() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    let lib = get_default_library();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = jit
+        .compile(ASTFun::new(stmts(&[
+            assign("&sig1", call("atomr", 0, &[literal(0.0)])),
+            assign("&sig2", call("atomr", 0, &[literal(1.0)])),
+            call("atomr", 0, &[literal(0.5)]),
+        ])))
+        .unwrap();
+
+    code.init(44100.0, None);
+
+    dsp_ctx.borrow().atom(0).unwrap().set(12.0);
+    dsp_ctx.borrow().atom(1).unwrap().set(14.0);
+
+    let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 12.0);
+    assert_float_eq!(ret, 12.0);
+    assert_float_eq!(s2, 14.0);
+
+    dsp_ctx.borrow_mut().free();
+}
+
+#[test]
+fn check_stdlib_atomr_lin() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    let lib = get_default_library();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = jit
+        .compile(ASTFun::new(stmts(&[
+            assign("&sig1", call("atomr~", 0, &[literal(0.0)])),
+            assign("&sig2", call("atomr~", 0, &[literal(1.0)])),
+            call("atomr~", 0, &[literal(0.5)]),
+        ])))
+        .unwrap();
+
+    code.init(44100.0, None);
+
+    dsp_ctx.borrow().atom(0).unwrap().set(12.0);
+    dsp_ctx.borrow().atom(1).unwrap().set(14.0);
+
+    let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 12.0);
+    assert_float_eq!(ret, 13.0);
+    assert_float_eq!(s2, 14.0);
+
+    dsp_ctx.borrow_mut().free();
+}
+
+
+#[test]
+fn check_stdlib_atomw() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    let lib = get_default_library();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = jit
+        .compile(ASTFun::new(stmts(&[
+            assign("&sig1", call("atomw", 0, &[literal(0.0), var("in1")])),
+            assign("&sig2", call("atomw", 0, &[literal(1.0), var("in2")])),
+        ])))
+        .unwrap();
+
+    code.init(44100.0, None);
+
+    let (s1, s2, _) = code.exec_2in_2out(12.0, 13.0);
+    assert_float_eq!(s1, 12.0);
+    assert_float_eq!(s2, 13.0);
+    let x1 = dsp_ctx.borrow().atom(0).unwrap().get();
+    let x2 = dsp_ctx.borrow().atom(1).unwrap().get();
+    assert_float_eq!(x1, 12.0);
+    assert_float_eq!(x2, 13.0);
+
+    dsp_ctx.borrow_mut().free();
+}

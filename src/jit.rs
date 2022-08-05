@@ -566,7 +566,11 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                 let local_callee =
                     self.module.declare_func_in_func(func_id, self.builder.func);
                 let call = self.builder.ins().call(local_callee, &dsp_node_fun_params);
-                Ok(self.builder.inst_results(call)[0])
+                if node_type.has_return_value() {
+                    Ok(self.builder.inst_results(call)[0])
+                } else {
+                    Ok(self.builder.ins().f64const(0.0))
+                }
             }
             ASTNode::If(cond, then, els) => {
                 let condition_value = if let ASTNode::BinOp(op, a, b) = cond.as_ref() {

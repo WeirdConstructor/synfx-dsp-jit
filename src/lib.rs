@@ -163,6 +163,18 @@ while not_done {
 }
 ```
 
+## Available DSP Nodes/Functions
+
+| DSPNodeType name + sig | Description |
+|-|-|
+| accum - input, reset -> sum | Accumulator |
+| phase - frequency, reset -> phase | Phase oscillator |
+| sin - radians -> sine | Sine function |
+| /% - a, b -> div, rem | Computes the float division and remainder of a and b |
+| atomr - index -> value | Reads an atomic float from a shared buffer |
+| atomr~ - index -> value | Reads a linear interpolated atomic float from a shared buffer |
+| atomw - index, value -> value | Writes an atomic float into a shared buffer |
+
 */
 
 mod ast;

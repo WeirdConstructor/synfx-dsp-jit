@@ -17,6 +17,8 @@ with this crate.
 use crate::*;
 
 use ringbuf::{Consumer, Producer, RingBuffer};
+use synfx_dsp::AtomicFloat;
+use std::sync::Arc;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -124,6 +126,27 @@ impl CodeEngine {
     /// Returns the [DSPNodeTypeLibrary] that is used by this [CodeEngine].
     pub fn get_lib(&self) -> Rc<RefCell<DSPNodeTypeLibrary>> {
         self.lib.clone()
+    }
+
+    /// Returns you a reference to the specified atom connected with the DSP backend.
+    /// These atoms can be read and written in the [DSPFunction] using the `atomr` and `atomw`
+    /// nodes.
+    pub fn atom(&self, idx: usize) -> Option<Arc<AtomicFloat>> {
+        self.dsp_ctx.borrow().atom(idx)
+    }
+
+    /// A shortcut to access a specific atom that was written with the `atomw` node.
+    /// An alternative is the [atom] method to directly access the [AtomicFloat].
+    pub fn atom_get(&self, idx: usize) -> f32 {
+        self.atom(idx).map(|a| a.get()).unwrap_or(0.0)
+    }
+
+    /// A shortcut to access a specific atom that can be read with the `atomr` (or `atomr~`) node.
+    /// An alternative is the [atom] method to directly access the [AtomicFloat].
+    pub fn atom_set(&self, idx: usize, v: f32) {
+        if let Some(at) = self.atom(idx) {
+            at.set(v)
+        }
     }
 
     /// Compiles and uploads a new piece of DSP code to the backend thread.

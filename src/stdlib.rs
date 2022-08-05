@@ -75,12 +75,12 @@ extern "C" fn process_phase(freq: f64, state: *mut PhaseNodeState) -> f64 {
 stateful_dsp_node_type! {
     PhaseNodeType, PhaseNodeState => process_phase "phase" "vSr"
     doc
-    "A very simple oscillator that outputs a rising sawtooth wave with the \
+    "A very simple oscillator that outputs a rising sawtooth wave to 'phase' (range 0.0 to 1.0) with the \
     frequency 'freq' (range 0.0 to 22050.0)."
     inputs
     0 "freq"
     outputs
-    0 "p"
+    0 "phase"
 }
 
 extern "C" fn process_sin(v: f64) -> f64 {
@@ -116,6 +116,64 @@ stateless_dsp_node_type! {
     1 "rem"
 }
 
+extern "C" fn process_atomr(idx: f64, dsp_state: *mut DSPState) -> f64 {
+    let atoms = unsafe { &mut (*dsp_state).atoms };
+    let i = idx.floor() as usize % atoms.len();
+    atoms[i].get() as f64
+}
+
+stateless_dsp_node_type! {
+    AtomRNodeType => process_atomr "atomr" "vDr"
+    doc
+    "This node reads from the specified 'index' in the 512 long array of \
+    shared atomic floats. If index >= 512, it will wrap around."
+    inputs
+    0 "index"
+    outputs
+    0 "value"
+}
+
+extern "C" fn process_atomr_lin(idx: f64, dsp_state: *mut DSPState) -> f64 {
+    let atoms = unsafe { &mut (*dsp_state).atoms };
+    let i1 = idx.floor() as usize % atoms.len();
+    let i2 = (i1 + 1) % atoms.len();
+    let f = idx.fract();
+    let a = atoms[i1].get() as f64;
+    let b = atoms[i2].get() as f64;
+    a * (1.0 - f) + f * b
+}
+
+stateless_dsp_node_type! {
+    AtomRLinNodeType => process_atomr_lin "atomr~" "vDr"
+    doc
+    "This node reads linearily interpolated from the specified 'index' in the 512 long array of \
+    shared atomic floats. If index >= 512, it will wrap around."
+    inputs
+    0 "index"
+    outputs
+    0 "value"
+}
+
+extern "C" fn process_atomw(idx: f64, v: f64, dsp_state: *mut DSPState) -> f64 {
+    let atoms = unsafe { &mut (*dsp_state).atoms };
+    let i = idx.floor() as usize % atoms.len();
+    atoms[i].set(v as f32);
+    v
+}
+
+stateless_dsp_node_type! {
+    AtomWNodeType => process_atomw "atomw" "vvDr"
+    doc
+    "This node writes 'vlue' to the specified 'index' in the 512 long array of \
+    shared atomic floats. If index >= 512, it will wrap around. It passes 'value' through, \
+    so that you can easily plug this node in some signal path."
+    inputs
+    0 "index"
+    1 "value"
+    outputs
+    0 "value"
+}
+
 /// Creates a [crate::context::DSPNodeTypeLibrary] that contains a bunch of
 /// standard components as seem fit by the synfx-dsp-jit crate developer.
 ///
@@ -127,5 +185,8 @@ pub fn get_standard_library() -> Rc<RefCell<DSPNodeTypeLibrary>> {
     lib.borrow_mut().add(AccumNodeType::new_ref());
     lib.borrow_mut().add(DivRemNodeType::new_ref());
     lib.borrow_mut().add(PhaseNodeType::new_ref());
+    lib.borrow_mut().add(AtomWNodeType::new_ref());
+    lib.borrow_mut().add(AtomRNodeType::new_ref());
+    lib.borrow_mut().add(AtomRLinNodeType::new_ref());
     lib
 }
