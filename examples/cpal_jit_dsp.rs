@@ -23,7 +23,7 @@ fn main() {
             engine.upload(stmts(&[assign(
                 "&sig1",
                 op_mul(literal(0.3), call("phase", 1, &[literal(freq)])),
-            )]));
+            )])).expect("No compile error");
             println!("{}", engine.get_debug_info());
 
             std::thread::sleep(std::time::Duration::from_millis(300));

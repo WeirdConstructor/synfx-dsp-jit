@@ -235,7 +235,7 @@ impl DSPNodeTypeLibrary {
         mut f: F,
     ) -> Result<(), T> {
         for t in self.types.iter() {
-            f(&t)?;
+            f(t)?;
         }
         Ok(())
     }
@@ -644,6 +644,10 @@ impl DSPFunction {
     }
 
     /// Use this to access the [DSPState] pointer between calls to [DSPFunction::exec].
+    ///
+    /// # Safety
+    ///
+    /// You must not create multiple aliasing references from that DSP state!
     pub unsafe fn with_dsp_state<R, F: FnMut(*mut DSPState) -> R>(&mut self, mut f: F) -> R {
         f(self.get_dsp_state_ptr())
     }
@@ -653,6 +657,11 @@ impl DSPFunction {
     ///
     /// The `node_state_uid` and the type you pass here must match! It's your responsibility
     /// to make sure this works!
+    ///
+    /// # Safety
+    ///
+    /// You absolutely must know which ID has which [DSPNodeType], otherwise this will badly go wrong!
+    ///
     ///```
     /// use synfx_dsp_jit::*;
     /// use synfx_dsp_jit::build::*;
@@ -679,6 +688,7 @@ impl DSPFunction {
     ///
     /// ctx.borrow_mut().free();
     ///```
+    #[allow(clippy::result_unit_err)]
     pub unsafe fn with_node_state<T, R, F: FnMut(*mut T) -> R>(
         &mut self,
         node_state_uid: u64,
@@ -718,6 +728,7 @@ impl DSPFunction {
     ///
     /// It returns the return value of the computation. For addition outputs you can
     /// write to `"&sig1"` or `"&sig2"` with for instance: `assign(var("&sig1"), literal(10.0))`.
+    #[allow(clippy::too_many_arguments)]
     pub fn exec(
         &mut self,
         in1: f64,
@@ -733,7 +744,7 @@ impl DSPFunction {
         let states_ptr: *mut *mut u8 = self.node_states.as_mut_ptr();
         let pers_vars_ptr: *mut f64 = self.persistent_vars.as_mut_ptr();
         let mut multi_returns = [0.0; 5];
-        let ret = (unsafe { self.function.unwrap_unchecked() })(
+        (unsafe { self.function.unwrap_unchecked() })(
             in1,
             in2,
             alpha,
@@ -748,9 +759,7 @@ impl DSPFunction {
             states_ptr,
             pers_vars_ptr,
             (&mut multi_returns) as *mut f64,
-        );
-        //d// println!("MULTRET: {:?}", multi_returns);
-        ret
+        )
     }
 
     pub(crate) fn install(&mut self, node_state: &mut DSPNodeState) -> usize {

@@ -212,6 +212,6 @@ pub fn instant_compile_ast(
 ) -> Result<(Rc<RefCell<DSPNodeContext>>, Box<DSPFunction>), JITCompileError> {
     let lib = get_standard_library();
     let ctx = DSPNodeContext::new_ref();
-    let jit = JIT::new(lib.clone(), ctx.clone());
+    let jit = JIT::new(lib, ctx.clone());
     Ok((ctx, jit.compile(ASTFun::new(ast))?))
 }

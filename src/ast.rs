@@ -118,7 +118,7 @@ impl ASTFun {
         &self.locals
     }
 
-    pub fn ast_ref(&self) -> &Box<ASTNode> {
+    pub fn ast_ref(&self) -> &ASTNode {
         &self.ast
     }
 }

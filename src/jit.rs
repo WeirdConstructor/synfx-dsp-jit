@@ -352,22 +352,22 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
         self.builder.ins().fcvt_from_uint(F64, bint)
     }
 
-    fn compile(&mut self, ast: &Box<ASTNode>) -> Result<Value, JITCompileError> {
-        match ast.as_ref() {
+    fn compile(&mut self, ast: &ASTNode) -> Result<Value, JITCompileError> {
+        match ast {
             ASTNode::Lit(v) => Ok(self.builder.ins().f64const(*v)),
             ASTNode::Var(name) => {
-                if name.chars().next() == Some('&') {
+                if name.starts_with('&') {
                     let variable = self
                         .variables
                         .get(name)
                         .ok_or_else(|| JITCompileError::UndefinedVariable(name.to_string()))?;
                     let ptr = self.builder.use_var(*variable);
                     Ok(self.builder.ins().load(F64, MemFlags::new(), ptr, 0))
-                } else if name.chars().next() == Some('*') {
+                } else if name.starts_with('*') {
                     let pv_index = self
                         .dsp_ctx
                         .get_persistent_variable_index(name)
-                        .or_else(|_| Err(JITCompileError::UndefinedVariable(name.to_string())))?;
+                        .map_err(|_| JITCompileError::UndefinedVariable(name.to_string()))?;
 
                     let persistent_vars = self
                         .variables
@@ -381,7 +381,7 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         Offset32::new(pv_index as i32 * F64.bytes() as i32),
                     );
                     Ok(pers_value)
-                } else if name.chars().next() == Some('%') {
+                } else if name.starts_with('%') {
                     if name.len() > 2 {
                         return Err(JITCompileError::InvalidReturnValueAccess(name.to_string()));
                     }
@@ -422,18 +422,18 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
             ASTNode::Assign(name, ast) => {
                 let value = self.compile(ast)?;
 
-                if name.chars().next() == Some('&') {
+                if name.starts_with('&') {
                     let variable = self
                         .variables
                         .get(name)
                         .ok_or_else(|| JITCompileError::UndefinedVariable(name.to_string()))?;
                     let ptr = self.builder.use_var(*variable);
                     self.builder.ins().store(MemFlags::new(), value, ptr, 0);
-                } else if name.chars().next() == Some('*') {
+                } else if name.starts_with('*') {
                     let pv_index = self
                         .dsp_ctx
                         .get_persistent_variable_index(name)
-                        .or_else(|_| Err(JITCompileError::UndefinedVariable(name.to_string())))?;
+                        .map_err(|_| JITCompileError::UndefinedVariable(name.to_string()))?;
 
                     let persistent_vars = self
                         .variables
@@ -564,7 +564,7 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                 }
 
                 let local_callee =
-                    self.module.declare_func_in_func(func_id, &mut self.builder.func);
+                    self.module.declare_func_in_func(func_id, self.builder.func);
                 let call = self.builder.ins().call(local_callee, &dsp_node_fun_params);
                 Ok(self.builder.inst_results(call)[0])
             }
