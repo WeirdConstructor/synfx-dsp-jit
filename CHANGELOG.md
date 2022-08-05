@@ -5,6 +5,7 @@
 less persistent variables in the new DSPFunction.
 * Bugfix: I've implemented now Sync too for the DSPFunction. Even though it's not
 safe to do that. But it is required by some plugin APIs.
+* Bugfix: Assigned variables would not be recognized and declared as local variables.
 * Feature: Added documentation functions to the `DSPNodeType` trait. Also made it
 mandatory for the macro helper to define a `DSPNodeType`.
 * Feature: Added access to persistent variables via DSPFunction::access\_persistent\_var
