@@ -178,11 +178,24 @@ impl JIT {
         let dsp_lib = dsp_lib.borrow();
         let dsp_ctx = self.dsp_ctx.clone();
         let mut dsp_ctx = dsp_ctx.borrow_mut();
-        let mut trans = DSPFunctionTranslator::new(&mut *dsp_ctx, &*dsp_lib, builder, module);
-        trans.register_functions()?;
-        let ret = trans.translate(fun)?;
-        println!("{}", trans.builder.func.display());
-        Ok(ret)
+
+        let debug = dsp_ctx.debug_enabled();
+        let mut debug_str = None;
+
+        {
+            let mut trans = DSPFunctionTranslator::new(&mut *dsp_ctx, &*dsp_lib, builder, module);
+            trans.register_functions()?;
+            trans.translate(fun)?;
+            if debug {
+                debug_str = Some(format!("{}", trans.builder.func.display()));
+            }
+        }
+
+        if let Some(debug_str) = debug_str {
+            dsp_ctx.cranelift_ir_dump = debug_str;
+        }
+
+        Ok(())
     }
 
     //    pub fn translate_ast_node(&mut self, builder: FunctionBuilder<'a>,

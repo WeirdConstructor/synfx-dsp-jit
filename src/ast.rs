@@ -210,6 +210,7 @@ impl ASTNode {
         }
     }
 
+    /// Tree dump of the AST. Returns a neatly indented tree. Pass 0 as first `indent`.
     pub fn dump(&self, indent: usize) -> String {
         let indent_str = "   ".repeat(indent + 1);
         let mut s = indent_str + &self.to_string() + "\n";

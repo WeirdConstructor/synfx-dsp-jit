@@ -77,6 +77,7 @@ pub struct CodeEngine {
     lib: Rc<RefCell<DSPNodeTypeLibrary>>,
     update_prod: Producer<CodeUpdateMsg>,
     return_cons: Consumer<CodeReturnMsg>,
+    ast_dump: String,
 }
 
 impl Clone for CodeEngine {
@@ -93,7 +94,26 @@ impl CodeEngine {
         let rb = RingBuffer::new(MAX_RINGBUF_SIZE);
         let (_return_prod, return_cons) = rb.split();
 
-        Self { lib, dsp_ctx: DSPNodeContext::new_ref(), update_prod, return_cons }
+        Self {
+            lib,
+            dsp_ctx: DSPNodeContext::new_ref(),
+            update_prod,
+            return_cons,
+            ast_dump: String::from(""),
+        }
+    }
+
+    /// Enabled debug information collection:
+    pub fn set_debug(&mut self, debug: bool) {
+        self.dsp_ctx.borrow_mut().set_debug(debug);
+    }
+
+    /// Retrieves debug information:
+    pub fn get_debug_info(&self) -> String {
+        format!("---------- AST ----------\n{}\n------- JIT IR -------\n{}\n---------- END ----------",
+            self.ast_dump,
+            self.dsp_ctx.borrow_mut().get_ir_dump()
+        )
     }
 
     /// Constructor with the default standard library that comes with `synfx-dsp-jit`.
@@ -119,6 +139,9 @@ impl CodeEngine {
     ///```
     pub fn upload(&mut self, ast: Box<ASTNode>) -> Result<(), JITCompileError> {
         let jit = JIT::new(self.lib.clone(), self.dsp_ctx.clone());
+        if self.dsp_ctx.borrow().debug_enabled() {
+            self.ast_dump = ast.dump(0);
+        }
         let fun = jit.compile(ASTFun::new(ast))?;
         let _ = self.update_prod.push(CodeUpdateMsg::UpdateFun(fun));
 

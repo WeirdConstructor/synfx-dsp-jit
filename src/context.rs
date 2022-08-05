@@ -25,6 +25,11 @@ pub struct DSPNodeContext {
     generation: u64,
     /// Contains the currently compiled [DSPFunction].
     next_dsp_fun: Option<Box<DSPFunction>>,
+    /// If enabled, some extra data will be collected.
+    debug_enabled: bool,
+    /// If [DSPNodeContext::set_debug] is enabled, this contains the most recently compiled piece
+    /// of cranelift intermedite representation. You can receive this via [DSPNodeContext::get_ir_dump].
+    pub(crate) cranelift_ir_dump: String,
 }
 
 impl DSPNodeContext {
@@ -41,6 +46,8 @@ impl DSPNodeContext {
             next_dsp_fun: None,
             persistent_var_map: HashMap::new(),
             persistent_var_index: 0,
+            debug_enabled: false,
+            cranelift_ir_dump: String::from(""),
         }
     }
 
@@ -52,6 +59,22 @@ impl DSPNodeContext {
     pub(crate) fn init_dsp_function(&mut self) {
         self.generation += 1;
         self.next_dsp_fun = Some(Box::new(DSPFunction::new(self.state, self.generation)));
+    }
+
+    /// Enabled debug information collection. See also [DSPNodeContext::get_ir_dump].
+    pub fn set_debug(&mut self, enabled: bool) {
+        self.debug_enabled = enabled;
+    }
+
+    /// Returns if debug is enabled.
+    pub fn debug_enabled(&self) -> bool {
+        self.debug_enabled
+    }
+
+    /// If [DSPNodeContext::set_debug] is enabled, this will return the most recent
+    /// IR code for the most recently compiled [DSPFunction].
+    pub fn get_ir_dump(&self) -> &str {
+        &self.cranelift_ir_dump
     }
 
     /// Retrieve the index into the most recently compiled [DSPFunction].

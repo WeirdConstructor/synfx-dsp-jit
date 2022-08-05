@@ -14,6 +14,8 @@ and DSPNodeContext::get\_persistent\_variable\_index\_by\_name.
 * Feature: Added '/%' node to stdlib.
 * Feature: Added 'phase' node to generate a phase sawtooth signal.
 * Feature: Added CodeEngine API for compiling and uploading pieces of code to an audio thread.
+* Feature: Added debug information collection to dump the Cranelift IR and AST tree.
+* Documentation: Added example 'cpal\_jit\_dsp' to the repository.
 
 0.5.2 (2022-07-31)
 ==================
