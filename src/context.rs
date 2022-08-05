@@ -702,6 +702,9 @@ impl DSPFunction {
     }
 
     /// Retrieves the DSP node state pointer for a certain unique node state id.
+    ///
+    /// # Safety
+    ///
     /// You are responsible afterwards for knowing what type the actual pointer is of.
     pub fn get_node_state_ptr(&self, node_state_uid: u64) -> Option<*mut u8> {
         for (i, uid) in self.node_state_uids.iter().enumerate() {

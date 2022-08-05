@@ -20,10 +20,12 @@ fn main() {
             let freq = freqs[i];
             i = (i + 1) % freqs.len();
 
-            engine.upload(stmts(&[assign(
-                "&sig1",
-                op_mul(literal(0.3), call("phase", 1, &[literal(freq)])),
-            )])).expect("No compile error");
+            engine
+                .upload(stmts(&[assign(
+                    "&sig1",
+                    op_mul(literal(0.3), op_sub(call("phase", 1, &[literal(freq)]), literal(0.5))),
+                )]))
+                .expect("No compile error");
             println!("{}", engine.get_debug_info());
 
             std::thread::sleep(std::time::Duration::from_millis(300));
