@@ -117,5 +117,49 @@ assert!((out[3] - 0.4766).abs() < 0.0001);
 ctx.borrow_mut().free();
 ```
 
+### DSP Engine API
+
+The [synfx_dsp_jit::engine::CodeEngine] API is a convenience API for dealing with
+an audio/real time thread. When you want to compile the function on some non real time thread
+like a GUI or worker thread, and use the resulting DSP function in an audio thread to produce
+audio samples.
+
+```rust
+use synfx_dsp_jit::engine::CodeEngine;
+use synfx_dsp_jit::build::*;
+
+// Create an engine:
+let mut engine = CodeEngine::new_stdlib();
+
+// Retrieve the backend:
+let mut backend = engine.get_backend();
+
+// This should actually be in some audio thread:
+std::thread::spawn(move || {
+    backend.set_sample_rate(44100.0);
+
+    loop {
+        backend.process_updates(); // Receive updates from the frontend
+
+        // Generate some audio samples here:
+        for frame in 0..64 {
+            let (s1, s2, ret) = backend.process(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        }
+    }
+});
+
+// Upload a new piece of code whenever you see fit:
+engine.upload(call("sin", 1, &[literal(1.0)])).unwrap();
+
+let mut not_done = true;
+while not_done {
+    // Call this regularily!!!!
+    engine.query_returns();
+
+    // Just for ending this example:
+    not_done = false;
+}
+```
+
 
 License: GPL-3.0-or-later

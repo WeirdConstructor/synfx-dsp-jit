@@ -126,6 +126,43 @@ an audio/real time thread. When you want to compile the function on some non rea
 like a GUI or worker thread, and use the resulting DSP function in an audio thread to produce
 audio samples.
 
+```
+use synfx_dsp_jit::engine::CodeEngine;
+use synfx_dsp_jit::build::*;
+
+// Create an engine:
+let mut engine = CodeEngine::new_stdlib();
+
+// Retrieve the backend:
+let mut backend = engine.get_backend();
+
+// This should actually be in some audio thread:
+std::thread::spawn(move || {
+    backend.set_sample_rate(44100.0);
+
+    loop {
+        backend.process_updates(); // Receive updates from the frontend
+
+        // Generate some audio samples here:
+        for frame in 0..64 {
+            let (s1, s2, ret) = backend.process(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        }
+    }
+});
+
+// Upload a new piece of code whenever you see fit:
+engine.upload(call("sin", 1, &[literal(1.0)])).unwrap();
+
+let mut not_done = true;
+while not_done {
+    // Call this regularily!!!!
+    engine.query_returns();
+
+    // Just for ending this example:
+    not_done = false;
+}
+```
+
 */
 
 mod ast;
