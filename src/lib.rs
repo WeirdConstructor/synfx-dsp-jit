@@ -121,7 +121,7 @@ ctx.borrow_mut().free();
 
 ## DSP Engine API
 
-The [synfx_dsp_jit::engine::CodeEngine] API is a convenience API for dealing with
+The [crate::engine::CodeEngine] API is a convenience API for dealing with
 an audio/real time thread. When you want to compile the function on some non real time thread
 like a GUI or worker thread, and use the resulting DSP function in an audio thread to produce
 audio samples.
@@ -166,6 +166,7 @@ while not_done {
 */
 
 mod ast;
+#[allow(rustdoc::private_intra_doc_links)]
 mod context;
 mod jit;
 pub mod engine;

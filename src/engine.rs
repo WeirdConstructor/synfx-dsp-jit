@@ -2,13 +2,16 @@
 // This file is a part of synfx-dsp-jit. Released under GPL-3.0-or-later.
 // See README.md and COPYING for details.
 
-/** This module implements a real time capable engine for sharing [DSPFunction]s with an audio thread.
+/*! This module implements a real time capable engine for sharing [DSPFunction]s with an audio thread.
 
 Use this if you plan on (re)compiling little DSP functions in
 a frontend thread and having an audio/backend thread actually executing the [DSPFunction].
 
 The [CodeEngine] handles allocation and deallocation for you, as well as communication
 with the real time thread.
+
+See also [CodeEngine] or [crate] for API examples. There is also an example included
+with this crate.
 */
 
 use crate::*;
@@ -35,7 +38,7 @@ enum CodeReturnMsg {
 /// and [CodeEngineBackend::process_updates] regularily.
 ///
 /// Once the audio thread runs, you can call [CodeEngine::upload] with an [ASTNode] tree.
-/// The tree can be built for instance with the helper functions in [synfx_dsp_jit::build].
+/// The tree can be built for instance with the helper functions in [crate::build].
 /// To process feedback and unused old [DSPFunction] instances, you **must** call
 /// [CodeEngine::query_returns] regularily. In a GUI for instance each frame, or in the idle callback
 /// of the event loop.
@@ -68,7 +71,7 @@ enum CodeReturnMsg {
 /// engine.query_returns();
 ///```
 ///
-/// A more elaborate example can be found at the top level: [synfx_dsp_jit]
+/// A more elaborate example can be found at the top level: [crate]
 pub struct CodeEngine {
     dsp_ctx: Rc<RefCell<DSPNodeContext>>,
     lib: Rc<RefCell<DSPNodeTypeLibrary>>,
@@ -157,7 +160,7 @@ impl CodeEngine {
     ///     }
     /// });
     ///```
-    /// See also the module description for a more complete example [synfx_dsp_jit::engine]
+    /// See also the module description for a more complete example [crate::engine]
     pub fn get_backend(&mut self) -> CodeEngineBackend {
         let rb = RingBuffer::new(MAX_RINGBUF_SIZE);
         let (update_prod, update_cons) = rb.split();
@@ -181,8 +184,8 @@ impl Drop for CodeEngine {
 /// The backend handle for a [CodeEngine].
 ///
 /// You get this from a call to [CodeEngine::get_backend].
-/// Make sure to set it up properly with [CodeEngine::set_sample_rate] and
-/// regularily call [CodeEngine::process_updates] for receiving updated
+/// Make sure to set it up properly with [CodeEngineBackend::set_sample_rate] and
+/// regularily call [CodeEngineBackend::process_updates] for receiving updated
 /// [DSPFunction] instances from [CodeEngine::upload].
 pub struct CodeEngineBackend {
     sample_rate: f32,

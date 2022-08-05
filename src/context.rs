@@ -265,7 +265,7 @@ impl DSPNodeTypeLibrary {
 ///```
 ///
 /// You might've guessed, `process_my_dsp_node` is the function identifier in the Rust
-/// code. The `"my_dsp"` is the name you can use to refer to this in [ASTNode::Call]:
+/// code. The `"my_dsp"` is the name you can use to refer to this in [crate::ASTNode::Call]:
 /// `ASTNode::Call("my_dsp".to_string(), 1, ...)`.
 /// **Attention:** Make sure to provide unique state IDs here!
 ///
