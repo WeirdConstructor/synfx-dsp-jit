@@ -1,4 +1,4 @@
-0.5.3 (unreleased)
+0.5.3 (2022-08-05)
 ==================
 
 * Bugfix: There was a bug in persistent variable handling, when there were
