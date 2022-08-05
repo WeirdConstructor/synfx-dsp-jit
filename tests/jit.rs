@@ -514,3 +514,54 @@ fn check_stdlib_divrem() {
 
     dsp_ctx.borrow_mut().free();
 }
+
+#[test]
+fn check_stdlib_phase() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    let lib = get_default_library();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = jit
+        .compile(ASTFun::new(stmts(&[
+            assign("&sig1", call("phase", 1, &[literal(1000.0)])),
+        ])))
+        .unwrap();
+
+    code.init(44100.0, None);
+
+    for _ in 0..11 {
+        code.exec_2in_2out(0.0, 0.0);
+    }
+    let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.2721);
+
+    for _ in 0..10 {
+        code.exec_2in_2out(0.0, 0.0);
+    }
+    let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.5215);
+
+    for _ in 0..8 {
+        code.exec_2in_2out(0.0, 0.0);
+    }
+    let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.7256);
+
+    code.reset();
+
+    for _ in 0..11 {
+        code.exec_2in_2out(0.0, 0.0);
+    }
+    let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.2721);
+
+    for _ in 0..110 {
+        code.exec_2in_2out(0.0, 0.0);
+    }
+    let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.7891);
+
+    dsp_ctx.borrow_mut().free();
+}

@@ -181,7 +181,7 @@ impl JIT {
         let mut trans = DSPFunctionTranslator::new(&mut *dsp_ctx, &*dsp_lib, builder, module);
         trans.register_functions()?;
         let ret = trans.translate(fun)?;
-        //d// println!("{}", trans.builder.func.display());
+        println!("{}", trans.builder.func.display());
         Ok(ret)
     }
 

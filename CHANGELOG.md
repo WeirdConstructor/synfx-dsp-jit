@@ -10,8 +10,9 @@ safe to do that. But it is required by some plugin APIs.
 mandatory for the macro helper to define a `DSPNodeType`.
 * Feature: Added access to persistent variables via DSPFunction::access\_persistent\_var
 and DSPNodeContext::get\_persistent\_variable\_index\_by\_name.
-* Feature: Added stateless_dsp_node_type.
-* Feature: Added /% node to stdlib.
+* Feature: Added stateless\_dsp\_node\_type.
+* Feature: Added '/%' node to stdlib.
+* Feature: Added 'phase' node to generate a phase sawtooth signal.
 
 0.5.2 (2022-07-31)
 ==================

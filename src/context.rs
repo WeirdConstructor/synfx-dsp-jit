@@ -375,7 +375,7 @@ macro_rules! stateful_dsp_node_type {
 /// }
 ///
 /// synfx_dsp_jit::stateless_dsp_node_type! {
-///     Mul2NodeType => process_my_dsp_node "mul2" "vr"
+///     Mul2NodeType => process_mul2 "mul2" "vr"
 ///     doc
 ///     "A simple multiplication by 2.0. Using '*' is simpler thought..."
 ///     inputs
@@ -726,6 +726,7 @@ impl DSPFunction {
             pers_vars_ptr,
             (&mut multi_returns) as *mut f64,
         );
+        //d// println!("MULTRET: {:?}", multi_returns);
         ret
     }
 

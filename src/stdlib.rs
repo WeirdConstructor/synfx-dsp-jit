@@ -47,6 +47,42 @@ stateful_dsp_node_type! {
     0 "sum"
 }
 
+pub struct PhaseNodeState {
+    pub israte: f64,
+    pub value: f64,
+}
+
+impl PhaseNodeState {
+    fn reset(&mut self, state: &mut DSPState) {
+        *self = Self::default();
+        self.israte = state.israte;
+    }
+}
+
+impl Default for PhaseNodeState {
+    fn default() -> Self {
+        Self { israte: 1.0 / 44100.0, value: 0.0 }
+    }
+}
+
+extern "C" fn process_phase(freq: f64, state: *mut PhaseNodeState) -> f64 {
+    let mut state = unsafe { &mut *state };
+    state.value += freq * state.israte;
+    state.value = state.value.fract();
+    state.value
+}
+
+stateful_dsp_node_type! {
+    PhaseNodeType, PhaseNodeState => process_phase "phase" "vSr"
+    doc
+    "A very simple oscillator that outputs a rising sawtooth wave with the \
+    frequency 'freq' (range 0.0 to 22050.0)."
+    inputs
+    0 "freq"
+    outputs
+    0 "p"
+}
+
 extern "C" fn process_sin(v: f64) -> f64 {
     v.sin()
 }
@@ -90,5 +126,6 @@ pub fn get_standard_library() -> Rc<RefCell<DSPNodeTypeLibrary>> {
     lib.borrow_mut().add(Arc::new(SinNodeType::default()));
     lib.borrow_mut().add(AccumNodeType::new_ref());
     lib.borrow_mut().add(DivRemNodeType::new_ref());
+    lib.borrow_mut().add(PhaseNodeType::new_ref());
     lib
 }
