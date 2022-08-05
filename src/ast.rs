@@ -100,11 +100,15 @@ impl ASTFun {
         walk_ast(ast.as_mut(), &mut |node| {
             if let ASTNode::Var(name) = node {
                 if self.name_is_local_var(&name) {
-                    self.locals.push(name.to_string());
+                    if !self.locals.contains(name) {
+                        self.locals.push(name.to_string());
+                    }
                 }
             } else if let ASTNode::Assign(name, _) = node {
                 if self.name_is_local_var(&name) {
-                    self.locals.push(name.to_string());
+                    if !self.locals.contains(name) {
+                        self.locals.push(name.to_string());
+                    }
                 }
             }
         });
