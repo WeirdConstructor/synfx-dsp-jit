@@ -26,6 +26,7 @@ const MAX_RINGBUF_SIZE: usize = 128;
 
 enum CodeUpdateMsg {
     UpdateFun(Box<DSPFunction>),
+    ResetFun,
 }
 
 enum CodeReturnMsg {
@@ -171,6 +172,12 @@ impl CodeEngine {
         Ok(())
     }
 
+    /// Emits a message to the backend to cause a reset of the DSPFunction.
+    /// All non persistent state is resetted in this case.
+    pub fn reset(&mut self) {
+        let _ = self.update_prod.push(CodeUpdateMsg::ResetFun);
+    }
+
     fn cleanup(&self, fun: Box<DSPFunction>) {
         self.dsp_ctx.borrow_mut().cleanup_dsp_fun_after_user(fun);
     }
@@ -288,7 +295,37 @@ impl CodeEngineBackend {
                     self.function.init(self.sample_rate as f64, Some(&fun));
                     let _ = self.return_prod.push(CodeReturnMsg::DestroyFun(fun));
                 }
+                CodeUpdateMsg::ResetFun => {
+            println!("UPRESET");
+                    self.function.reset();
+                },
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn check_engine_reset() {
+        use crate::build::*;
+
+        let mut engine = CodeEngine::new_stdlib();
+        let mut backend = engine.get_backend();
+
+        backend.set_sample_rate(44100.0);
+
+        engine.upload(var("$reset")).unwrap();
+
+        backend.process_updates();
+        let (_s1, _s2, ret) = backend.process(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        assert_eq!(ret.round() as i32, 0);
+
+        engine.reset();
+        backend.process_updates();
+        let (_s1, _s2, ret) = backend.process(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        assert_eq!(ret.round() as i32, 1);
     }
 }

@@ -18,10 +18,11 @@ pub const MAX_TMP_BUFS: usize = 8; // with buffers 48kHz * 10 * 4 this amounts t
 pub const TMP_BUF_SIZE: usize = 48000 * 10 * 4; // ~10 seconds of audio, at 4x of common sample rate
 
 /// Auxilary variables to access directly from the machine code.
-pub(crate) const AUX_VAR_COUNT: usize = 2;
+pub(crate) const AUX_VAR_COUNT: usize = 3;
 
 pub(crate) const AUX_VAR_IDX_SRATE: usize = 0;
 pub(crate) const AUX_VAR_IDX_ISRATE: usize = 1;
+pub(crate) const AUX_VAR_IDX_RESET: usize = 2;
 
 /// This table holds all the DSP state including the state of the individual DSP nodes
 /// that were created by the [crate::jit::DSPFunctionTranslator].
@@ -561,6 +562,8 @@ pub struct DSPFunction {
     /// Auxilary variables to access directly from the machine code. Holds information such as
     /// the sample rate or the inverse of the sample rate.
     aux_vars: [f64; AUX_VAR_COUNT],
+    /// Is true directly after reset.
+    resetted: bool,
     function: Option<
         fn(
             f64,
@@ -593,10 +596,11 @@ impl DSPFunction {
             node_state_init_reset: vec![],
             node_state_uids: vec![],
             persistent_vars: vec![],
-            aux_vars: [0.0, 0.0],
+            aux_vars: [0.0; AUX_VAR_COUNT],
             function: None,
             dsp_ctx_generation,
             module: None,
+            resetted: false,
         }
     }
 
@@ -638,6 +642,8 @@ impl DSPFunction {
             let now_len = self.persistent_vars.len();
             let len = prev_len.min(now_len);
             self.persistent_vars[0..len].copy_from_slice(&previous_function.persistent_vars[0..len])
+        } else {
+            self.resetted = true;
         }
 
         unsafe {
@@ -669,9 +675,11 @@ impl DSPFunction {
 
     /// If the DSP state needs to be resetted, call this on the audio thread.
     pub fn reset(&mut self) {
+        self.resetted = true;
         for (typ, ptr) in self.node_state_types.iter().zip(self.node_states.iter_mut()) {
             typ.reset_state(self.state, *ptr);
         }
+        self.persistent_vars.fill(0.0);
     }
 
     /// Use this to retrieve a pointer to the [DSPState] to access it between
@@ -780,10 +788,19 @@ impl DSPFunction {
         sig1: &mut f64,
         sig2: &mut f64,
     ) -> f64 {
+        {
+            self.aux_vars[AUX_VAR_IDX_RESET] = if self.resetted {
+                self.resetted = false;
+                1.0
+            } else {
+                0.0
+            };
+        }
         let states_ptr: *mut *mut u8 = self.node_states.as_mut_ptr();
         let pers_vars_ptr: *mut f64 = self.persistent_vars.as_mut_ptr();
         let aux_vars: *mut f64 = self.aux_vars.as_mut_ptr();
         let mut multi_returns = [0.0; 5];
+
         (unsafe { self.function.unwrap_unchecked() })(
             in1,
             in2,
@@ -1030,7 +1047,7 @@ pub enum DSPNodeSigBit {
 ///
 /// ctx.borrow_mut().free();
 ///```
-pub trait DSPNodeType : Sync + Send {
+pub trait DSPNodeType: Sync + Send {
     /// The name of this DSP node, by this name it can be called from
     /// the [crate::ast::ASTFun].
     fn name(&self) -> &str;

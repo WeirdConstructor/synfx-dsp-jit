@@ -43,8 +43,11 @@ There are multiple different kinds of variables you can access:
 - Global Variables / Auxilary Variables:
   - `$srate` - The current sample rate in Hz
   - `$israte` - The current sample rate in 1.0 / Hz
+  - `$reset` - Is `1.0` directly after the very first initialization and after an explicit
+    call to [crate::DSPFunction::reset]. Otherwise it's `0.0`.
 - Persistent Variables (persistent across multiple calls, until a reset):
   - `*...` - Any variable that starts with a `*` is stored across multiple calls.
+  - _Note_: If you need more (longer) persistent variables, across resets too, use the `atomw`/`atomr` nodes!
 - Multiple Return Value Accessors
   - First return value does not exist as variable, it just is the result of
     the AST node itself, or the result of the node function.
@@ -66,9 +69,9 @@ all the following nodes in real time in a visual programming language (called WB
 | phase     | frequency, reset  | phase     | Phase oscillator |
 | sin       | radians           | sine      | Sine function |
 | /%        | a, b              | div, rem  | Computes the float division and remainder of a and b |
-| atomr     | index             | value     | Reads an atomic float from a shared buffer |
-| atomr~    | index             | value     | Reads a linear interpolated atomic float from a shared buffer |
-| atomw     | index, value      | value     | Writes an atomic float into a shared buffer |
+| atomr     | index             | value     | Reads an atomic float from a shared buffer at the given index |
+| atomr~    | index             | value     | Reads a linear interpolated atomic float from a shared buffer at the given index |
+| atomw     | index, value      | value     | Writes an atomic float into a shared buffer at the given index |
 
 */
 

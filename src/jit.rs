@@ -5,7 +5,7 @@
 use crate::ast::{ASTBinOp, ASTFun, ASTNode};
 use crate::context::{
     DSPFunction, DSPNodeContext, DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary,
-    AUX_VAR_IDX_ISRATE, AUX_VAR_IDX_SRATE,
+    AUX_VAR_IDX_ISRATE, AUX_VAR_IDX_SRATE, AUX_VAR_IDX_RESET,
 };
 use cranelift::prelude::types::{F64, I32};
 use cranelift::prelude::InstBuilder;
@@ -398,6 +398,7 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                     let offs = match &name[..] {
                         "$srate" => AUX_VAR_IDX_SRATE,
                         "$israte" => AUX_VAR_IDX_ISRATE,
+                        "$reset" => AUX_VAR_IDX_RESET,
                         _ => return Err(JITCompileError::UndefinedVariable(name.to_string())),
                     };
                     let aux_value = self.builder.ins().load(

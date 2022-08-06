@@ -427,9 +427,10 @@ fn check_node_accum() {
 
     let jit = JIT::new(lib.clone(), dsp_ctx.clone());
     let mut code = jit
-        .compile(ASTFun::new(stmts(&[
-            assign("&sig1", call("accum", 1, &[literal(0.1), literal(0.0)])),
-        ])))
+        .compile(ASTFun::new(stmts(&[assign(
+            "&sig1",
+            call("accum", 1, &[literal(0.1), literal(0.0)]),
+        )])))
         .unwrap();
 
     code.init(44100.0, None);
@@ -442,9 +443,10 @@ fn check_node_accum() {
     let old_code = code;
     let jit = JIT::new(lib.clone(), dsp_ctx.clone());
     let mut code = jit
-        .compile(ASTFun::new(stmts(&[
-            assign("&sig1", call("accum", 1, &[literal(0.1), literal(1.0)])),
-        ])))
+        .compile(ASTFun::new(stmts(&[assign(
+            "&sig1",
+            call("accum", 1, &[literal(0.1), literal(1.0)]),
+        )])))
         .unwrap();
 
     code.init(44100.0, Some(&old_code));
@@ -504,7 +506,7 @@ fn check_stdlib_divrem() {
     let mut code = jit
         .compile(ASTFun::new(stmts(&[
             assign("&sig1", call("/%", 1, &[literal(3.4), literal(2.0)])),
-            assign("&sig2", var("%1"))
+            assign("&sig2", var("%1")),
         ])))
         .unwrap();
 
@@ -526,9 +528,7 @@ fn check_stdlib_phase() {
 
     let jit = JIT::new(lib.clone(), dsp_ctx.clone());
     let mut code = jit
-        .compile(ASTFun::new(stmts(&[
-            assign("&sig1", call("phase", 1, &[literal(1000.0)])),
-        ])))
+        .compile(ASTFun::new(stmts(&[assign("&sig1", call("phase", 1, &[literal(1000.0)]))])))
         .unwrap();
 
     code.init(44100.0, None);
@@ -567,7 +567,6 @@ fn check_stdlib_phase() {
 
     dsp_ctx.borrow_mut().free();
 }
-
 
 #[test]
 fn check_stdlib_atomr() {
@@ -627,7 +626,6 @@ fn check_stdlib_atomr_lin() {
     dsp_ctx.borrow_mut().free();
 }
 
-
 #[test]
 fn check_stdlib_atomw() {
     use synfx_dsp_jit::build::*;
@@ -655,8 +653,6 @@ fn check_stdlib_atomw() {
 
     dsp_ctx.borrow_mut().free();
 }
-
-
 
 #[test]
 fn check_constants() {
@@ -710,6 +706,80 @@ fn check_constants() {
         let r = code.access_persistent_var(i).map(|var| *var).unwrap();
         assert_float_eq!(r, c);
     }
+
+    dsp_ctx.borrow_mut().free();
+}
+
+#[test]
+fn check_reset() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    dsp_ctx.borrow_mut().set_debug(true);
+    let lib = get_default_library();
+
+    let atom1 = dsp_ctx.borrow().atom(0).unwrap();
+    let atom2 = dsp_ctx.borrow().atom(1).unwrap();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = jit
+        .compile(ASTFun::new(stmts(&[
+            assign("prev", call("atomr", 0, &[literal(0.0)])),
+            call("atomw", 0, &[literal(0.0), op_add(var("prev"), var("$reset"))]),
+            call(
+                "atomw",
+                0,
+                &[literal(1.0), op_add(call("atomr", 0, &[literal(1.0)]), literal(1.0))],
+            ),
+        ])))
+        .unwrap();
+    println!("DEBUG: {}", dsp_ctx.borrow().get_ir_dump());
+
+    code.init(44100.0, None);
+    for _ in 0..10 {
+        code.exec_2in_2out(0.0, 0.0);
+    }
+
+    // Init does not count as reset, except after the very first one:
+    assert_float_eq!(atom1.get(), 1.0);
+
+    code.reset();
+    code.exec_2in_2out(0.0, 0.0);
+    code.exec_2in_2out(0.0, 0.0);
+    code.exec_2in_2out(0.0, 0.0);
+    code.exec_2in_2out(0.0, 0.0);
+
+    code.reset();
+    code.exec_2in_2out(0.0, 0.0);
+    code.exec_2in_2out(0.0, 0.0);
+    code.exec_2in_2out(0.0, 0.0);
+
+    assert_float_eq!(atom1.get(), 3.0);
+    assert_float_eq!(atom2.get(), 17.0);
+
+    // Recompile to check that we don't get an reset:
+    let old_code = code;
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = jit
+        .compile(ASTFun::new(stmts(&[
+            assign("prev", call("atomr", 0, &[literal(0.0)])),
+            call("atomw", 0, &[literal(0.0), op_add(var("prev"), var("$reset"))]),
+            call(
+                "atomw",
+                0,
+                &[literal(1.0), op_add(call("atomr", 0, &[literal(1.0)]), literal(1.0))],
+            ),
+        ])))
+        .unwrap();
+
+    code.init(44100.0, Some(&old_code));
+
+    code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(atom1.get(), 3.0);
+
+    code.reset();
+    code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(atom1.get(), 4.0);
 
     dsp_ctx.borrow_mut().free();
 }
