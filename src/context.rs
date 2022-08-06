@@ -10,8 +10,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use synfx_dsp::AtomicFloat;
 
-/// The number of DSP atoms to reserve for the `atomw` and `atomr` nodes to read/write from/to.
-pub const MAX_DSP_ATOMS: usize = 512;
 ///// The number of temporary (sample) buffers to allocate:
 //pub const MAX_TMP_BUFS: usize = 8; // with buffers 48kHz * 10 * 4 this amounts to ~29MB RAM
 ///// The size of each temporary buffer:
@@ -24,9 +22,33 @@ pub(crate) const AUX_VAR_IDX_SRATE: usize = 0;
 pub(crate) const AUX_VAR_IDX_ISRATE: usize = 1;
 pub(crate) const AUX_VAR_IDX_RESET: usize = 2;
 
+/// Configures the environment that will be available to the [DSPFunction]
+/// that is provided by [DSPNodeContext].
+///
+/// This could for instance be the number of atoms to be used by `atomr`/`atomw`, the
+/// number and length of buffers or the audio samples...
+#[derive(Debug, Clone)]
+pub struct DSPContextConfig {
+    /// The number of atoms available to `atomr`/`atomw`.
+    pub atom_count: usize,
+    /// The number of buffers available to `bufr`/`bufw` and their individual sizes.
+    pub buffers: Vec<usize>,
+}
+
+impl Default for DSPContextConfig {
+    fn default() -> Self {
+        Self {
+            atom_count: 512,
+            buffers: vec![48000 * 4; 16], // provide up to a few seconds of sound, depending on sample rate here...
+        }
+    }
+}
+
 /// This table holds all the DSP state including the state of the individual DSP nodes
 /// that were created by the [crate::jit::DSPFunctionTranslator].
 pub struct DSPNodeContext {
+    /// The environment configuration for the [DSPFunction] to operate in.
+    pub(crate) config: DSPContextConfig,
     /// The global DSP state that is passed to all stateful DSP nodes.
     state: *mut DSPState,
     /// Persistent variables:
@@ -53,11 +75,16 @@ pub struct DSPNodeContext {
 
 impl DSPNodeContext {
     fn new() -> Self {
+        Self::new_with_config(DSPContextConfig::default())
+    }
+
+    fn new_with_config(config: DSPContextConfig) -> Self {
         let mut atoms = vec![];
-        atoms.resize_with(MAX_DSP_ATOMS, || Arc::new(AtomicFloat::new(0.0)));
+        atoms.resize_with(config.atom_count, || Arc::new(AtomicFloat::new(0.0)));
         let atoms_state = atoms.clone();
 
         Self {
+            config,
             state: Box::into_raw(Box::new(DSPState {
                 x: 0.0,
                 y: 0.0,
@@ -579,6 +606,7 @@ pub struct DSPFunction {
             *mut *mut u8,
             *mut f64,
             *mut f64,
+            *mut *mut f64,
         ) -> f64,
     >,
 }
@@ -625,6 +653,7 @@ impl DSPFunction {
                     *mut *mut u8,
                     *mut f64,
                     *mut f64,
+                    *mut *mut f64,
                 ) -> f64,
             >(function)
         });
@@ -799,6 +828,7 @@ impl DSPFunction {
         let states_ptr: *mut *mut u8 = self.node_states.as_mut_ptr();
         let pers_vars_ptr: *mut f64 = self.persistent_vars.as_mut_ptr();
         let aux_vars: *mut f64 = self.aux_vars.as_mut_ptr();
+        let bufs: *mut *mut f64 = std::ptr::null_mut();
         let mut multi_returns = [0.0; 5];
 
         (unsafe { self.function.unwrap_unchecked() })(
@@ -815,6 +845,7 @@ impl DSPFunction {
             states_ptr,
             pers_vars_ptr,
             (&mut multi_returns) as *mut f64,
+            bufs,
         )
     }
 

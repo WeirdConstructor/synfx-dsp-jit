@@ -2,10 +2,10 @@
 // This file is a part of synfx-dsp-jit. Released under GPL-3.0-or-later.
 // See README.md and COPYING for details.
 
-use crate::ast::{ASTBinOp, ASTFun, ASTNode};
+use crate::ast::{ASTBinOp, ASTBufOp, ASTFun, ASTNode};
 use crate::context::{
     DSPFunction, DSPNodeContext, DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary,
-    AUX_VAR_IDX_ISRATE, AUX_VAR_IDX_SRATE, AUX_VAR_IDX_RESET,
+    AUX_VAR_IDX_ISRATE, AUX_VAR_IDX_RESET, AUX_VAR_IDX_SRATE,
 };
 use cranelift::prelude::types::{F64, I32};
 use cranelift::prelude::InstBuilder;
@@ -245,6 +245,8 @@ pub enum JITCompileError {
     DeclareTopFunError(String),
     DefineTopFunError(String),
     UndefinedDSPNode(String),
+    UnknownBuffer(usize),
+    NoValueBufferWrite(usize),
     NotEnoughArgsInCall(String, u64),
     NodeStateError(String, u64),
 }
@@ -541,6 +543,47 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                 };
 
                 Ok(value)
+            }
+            ASTNode::BufOp { op, buf_idx, idx, val } => {
+                if *buf_idx >= self.dsp_ctx.config.buffers.len() {
+                    return Err(JITCompileError::UnknownBuffer(*buf_idx));
+                }
+
+                let idx = self.compile(idx)?;
+
+                let ptr_type = self.module.target_config().pointer_type();
+                let buf_var = self
+                    .variables
+                    .get("&bufs")
+                    .ok_or_else(|| JITCompileError::UndefinedVariable("&bufs".to_string()))?;
+                let bptr = self.builder.use_var(*buf_var);
+                let buffer = self.builder.ins().load(
+                    ptr_type,
+                    MemFlags::new(),
+                    bptr,
+                    Offset32::new(*buf_idx as i32 * self.ptr_w as i32),
+                );
+
+                let idx = self.builder.ins().floor(idx);
+                let idx = self.builder.ins().imul_imm(idx, self.ptr_w as i64);
+                let ptr = self.builder.ins().iadd(buffer, idx);
+
+                match op {
+                    ASTBufOp::Write => {
+                        let val =
+                            val.as_ref().ok_or_else(|| JITCompileError::NoValueBufferWrite(*buf_idx))?;
+                        let val = self.compile(val)?;
+
+                        self.builder.ins().store(MemFlags::new(), val, ptr, 0);
+                        Ok(self.builder.ins().f64const(0.0))
+                    }
+                    ASTBufOp::Read => {
+                        Ok(self.builder.ins().load(ptr_type, MemFlags::new(), ptr, 0))
+                    }
+                    ASTBufOp::ReadLin => {
+                        Ok(self.builder.ins().load(ptr_type, MemFlags::new(), ptr, 0))
+                    }
+                }
             }
             ASTNode::Call(name, dsp_node_uid, args) => {
                 let func = self

@@ -27,6 +27,17 @@ pub enum ASTBinOp {
     Ge,
 }
 
+/// Buffer operation
+#[derive(Debug, Clone, Copy)]
+pub enum ASTBufOp {
+    /// Write to sample position
+    Write,
+    /// Read from sample position
+    Read,
+    /// Read with linear interpolation
+    ReadLin,
+}
+
 /// Top level structure that holds an AST.
 ///
 /// It holds the names of the local variables. For now you can't
@@ -57,6 +68,7 @@ impl ASTFun {
                 "&fstate".to_string(),
                 "&pv".to_string(),
                 "&rv".to_string(),
+                "&bufs".to_string(),
             ],
             locals: vec![], // vec!["x".to_string(), "y".to_string()],
             ast,
@@ -160,6 +172,12 @@ pub fn walk_ast<F: FnMut(&mut ASTNode)>(node: &mut ASTNode, f: &mut F) {
                 walk_ast(s.as_mut(), f);
             }
         }
+        ASTNode::BufOp { idx, val, .. } => {
+            walk_ast(idx.as_mut(), f);
+            if let Some(val) = val {
+                walk_ast(val.as_mut(), f);
+            }
+        }
     }
 }
 
@@ -190,6 +208,9 @@ pub enum ASTNode {
     /// You have to make sure that the IDs don't change and that you are not using
     /// the same ID for multiple stateful DSP nodes here.
     Call(String, u64, Vec<Box<ASTNode>>),
+    /// Perform a buffer operation on the specified buffer at the given index with an
+    /// optional value.
+    BufOp { op: ASTBufOp, buf_idx: usize, idx: Box<ASTNode>, val: Option<Box<ASTNode>> },
     /// A list of statements that must be executed in the here specified order.
     Stmts(Vec<Box<ASTNode>>),
 }
@@ -203,6 +224,7 @@ impl ASTNode {
             ASTNode::BinOp(op, _, _) => format!("binop:{:?}", op),
             ASTNode::If(_, _, _) => format!("if"),
             ASTNode::Call(fun, fs, _) => format!("call{}:{}", fs, fun),
+            ASTNode::BufOp { op, buf_idx, .. } => format!("buf{}:{:?}", buf_idx, op),
             ASTNode::Stmts(stmts) => format!("stmts:{}", stmts.len()),
         }
     }
@@ -215,6 +237,7 @@ impl ASTNode {
             ASTNode::BinOp(_op, _, _) => "binop",
             ASTNode::If(_, _, _) => "if",
             ASTNode::Call(_fun, _, _) => "call",
+            ASTNode::BufOp { .. } => "bufop",
             ASTNode::Stmts(_stmts) => "stmts",
         }
     }
@@ -249,6 +272,12 @@ impl ASTNode {
             ASTNode::Stmts(stmts) => {
                 for n in stmts {
                     s += &n.dump(indent + 1);
+                }
+            }
+            ASTNode::BufOp { idx, val, .. } => {
+                s += &idx.dump(indent + 1);
+                if let Some(val) = val {
+                    s += &val.dump(indent + 1);
                 }
             }
         }
@@ -318,6 +347,18 @@ pub mod build {
 
     pub fn op_div(a: Box<ASTNode>, b: Box<ASTNode>) -> Box<ASTNode> {
         Box::new(ASTNode::BinOp(ASTBinOp::Div, a, b))
+    }
+
+    pub fn buf_write(buf_idx: usize, idx: Box<ASTNode>, val: Box<ASTNode>) -> Box<ASTNode> {
+        Box::new(ASTNode::BufOp { op: ASTBufOp::Write, buf_idx, idx, val: Some(val) })
+    }
+
+    pub fn buf_read(buf_idx: usize, idx: Box<ASTNode>) -> Box<ASTNode> {
+        Box::new(ASTNode::BufOp { op: ASTBufOp::Read, buf_idx, idx, val: None })
+    }
+
+    pub fn buf_read_lerp(buf_idx: usize, idx: Box<ASTNode>) -> Box<ASTNode> {
+        Box::new(ASTNode::BufOp { op: ASTBufOp::ReadLin, buf_idx, idx, val: None })
     }
 
     pub fn stmts(s: &[Box<ASTNode>]) -> Box<ASTNode> {
