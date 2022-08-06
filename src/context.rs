@@ -12,10 +12,10 @@ use synfx_dsp::AtomicFloat;
 
 /// The number of DSP atoms to reserve for the `atomw` and `atomr` nodes to read/write from/to.
 pub const MAX_DSP_ATOMS: usize = 512;
-/// The number of temporary (sample) buffers to allocate:
-pub const MAX_TMP_BUFS: usize = 8; // with buffers 48kHz * 10 * 4 this amounts to ~29MB RAM
-/// The size of each temporary buffer:
-pub const TMP_BUF_SIZE: usize = 48000 * 10 * 4; // ~10 seconds of audio, at 4x of common sample rate
+///// The number of temporary (sample) buffers to allocate:
+//pub const MAX_TMP_BUFS: usize = 8; // with buffers 48kHz * 10 * 4 this amounts to ~29MB RAM
+///// The size of each temporary buffer:
+//pub const TMP_BUF_SIZE: usize = 48000 * 10 * 4; // ~10 seconds of audio, at 4x of common sample rate
 
 /// Auxilary variables to access directly from the machine code.
 pub(crate) const AUX_VAR_COUNT: usize = 3;
