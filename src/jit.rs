@@ -549,6 +549,8 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                     return Err(JITCompileError::UnknownBuffer(*buf_idx));
                 }
 
+                let buf_len = self.dsp_ctx.config.buffers[*buf_idx];
+
                 let idx = self.compile(idx)?;
 
                 let ptr_type = self.module.target_config().pointer_type();
@@ -565,6 +567,7 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                 );
 
                 let idx = self.builder.ins().floor(idx);
+                let idx = self.builder.ins().urem_imm(idx, buf_len as i64);
                 let idx = self.builder.ins().imul_imm(idx, self.ptr_w as i64);
                 let ptr = self.builder.ins().iadd(buffer, idx);
 
