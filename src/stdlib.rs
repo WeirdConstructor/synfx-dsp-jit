@@ -72,9 +72,10 @@ all the following nodes in real time in a visual programming language (called WB
 | atomr     | index             | value     | Reads an atomic float from a shared buffer at the given index |
 | atomr~    | index             | value     | Reads a linear interpolated atomic float from a shared buffer at the given index |
 | atomw     | index, value      | value     | Writes an atomic float into a shared buffer at the given index |
+| s&h       | input, set        | value     | A sample & hold node that samples it's input on a rising edge at 'set'. |
+| s&h~      | input, set        | value     | A sample & hold node that continously samples it's input if 'set' is set. |
 
 */
-
 
 use crate::stateful_dsp_node_type;
 use crate::stateless_dsp_node_type;
@@ -82,6 +83,7 @@ use crate::{DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary, DSPState};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+use synfx_dsp::Trigger;
 
 pub struct AccumNodeState {
     pub value: f64,
@@ -248,6 +250,78 @@ stateless_dsp_node_type! {
     0 "value"
 }
 
+pub struct SHLNodeState {
+    pub value: f64,
+}
+
+impl SHLNodeState {
+    fn reset(&mut self, _state: &mut DSPState) {
+        *self = Self::default();
+    }
+}
+
+impl Default for SHLNodeState {
+    fn default() -> Self {
+        Self { value: 0.0 }
+    }
+}
+
+extern "C" fn process_sh_l(i: f64, set: f64, state: *mut SHNodeState) -> f64 {
+    let mut state = unsafe { &mut *state };
+    if set > 0.5 {
+        state.value = i;
+    }
+    state.value
+}
+
+stateful_dsp_node_type! {
+    SHLNodeType, SHLNodeState => process_sh_l "s&h~" "vvSr"
+    doc
+    "This is a sample & hold node that samples it's 'input' as long as 'set' is above 0.5"
+    inputs
+    0 "input"
+    1 "set"
+    outputs
+    0 "value"
+}
+
+pub struct SHNodeState {
+    pub trig: Trigger,
+    pub value: f64,
+}
+
+impl SHNodeState {
+    fn reset(&mut self, _state: &mut DSPState) {
+        *self = Self::default();
+    }
+}
+
+impl Default for SHNodeState {
+    fn default() -> Self {
+        Self { trig: Trigger::new(), value: 0.0 }
+    }
+}
+
+extern "C" fn process_sh(i: f64, set: f64, state: *mut SHNodeState) -> f64 {
+    let mut state = unsafe { &mut *state };
+    if state.trig.check_trigger(set as f32) {
+        state.value = i;
+    }
+    state.value
+}
+
+stateful_dsp_node_type! {
+    SHNodeType, SHNodeState => process_sh "s&h" "vvSr"
+    doc
+    "This is a sample & hold node that samples it's 'input' on a rising edge \
+     on the 'set' input using a Schmitt trigger with high/low thresholds at 0.5/0.25."
+    inputs
+    0 "input"
+    1 "set"
+    outputs
+    0 "value"
+}
+
 /// Creates a [crate::context::DSPNodeTypeLibrary] that contains a bunch of
 /// standard components as seem fit by the synfx-dsp-jit crate developer.
 ///
@@ -262,5 +336,7 @@ pub fn get_standard_library() -> Rc<RefCell<DSPNodeTypeLibrary>> {
     lib.borrow_mut().add(AtomWNodeType::new_ref());
     lib.borrow_mut().add(AtomRNodeType::new_ref());
     lib.borrow_mut().add(AtomRLinNodeType::new_ref());
+    lib.borrow_mut().add(SHNodeType::new_ref());
+    lib.borrow_mut().add(SHLNodeType::new_ref());
     lib
 }

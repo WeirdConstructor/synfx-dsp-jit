@@ -10,6 +10,7 @@ See also `DSPNodeContext::atom` and `CodeEngine::atom`. Also added an example
 that shows how to control a DSPFunction with atoms.
 * Feature: Added constants for PI, E, TAU and many others.
 * Feature: Added `$reset` which is true directly after an (explicit) reset and the first initialization.
+* Feature: Added `s&h` and `s&h~` sample and hold nodes.
 
 0.5.3 (2022-08-05)
 ==================

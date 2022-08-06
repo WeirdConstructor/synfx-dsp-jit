@@ -783,3 +783,41 @@ fn check_reset() {
 
     dsp_ctx.borrow_mut().free();
 }
+
+
+#[test]
+fn check_node_sh() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    let lib = get_default_library();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = jit
+        .compile(ASTFun::new(stmts(&[
+            assign("&sig1", call("s&h", 1, &[var("in1"), var("in2")])),
+            assign("&sig2", call("s&h~", 2, &[var("in1"), var("in2")])),
+        ])))
+        .unwrap();
+
+    code.init(44100.0, None);
+    let (s1, s2, _) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.0);
+    assert_float_eq!(s2, 0.0);
+
+    let (s1, s2, _) = code.exec_2in_2out(0.4, 1.0);
+    assert_float_eq!(s1, 0.4);
+    assert_float_eq!(s2, 0.4);
+
+    let (s1, s2, _) = code.exec_2in_2out(0.8, 1.0);
+    assert_float_eq!(s1, 0.4);
+    assert_float_eq!(s2, 0.8);
+
+    let (s1, s2, _) = code.exec_2in_2out(0.9, 0.0);
+    assert_float_eq!(s1, 0.4);
+    assert_float_eq!(s2, 0.8);
+
+    let (s1, s2, _) = code.exec_2in_2out(-0.9, 1.0);
+    assert_float_eq!(s1, -0.9);
+    assert_float_eq!(s2, -0.9);
+}
