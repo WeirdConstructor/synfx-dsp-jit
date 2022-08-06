@@ -136,13 +136,13 @@ impl CodeEngine {
     }
 
     /// A shortcut to access a specific atom that was written with the `atomw` node.
-    /// An alternative is the [atom] method to directly access the [AtomicFloat].
+    /// An alternative is the [CodeEngine::atom] method to directly access the [AtomicFloat].
     pub fn atom_get(&self, idx: usize) -> f32 {
         self.atom(idx).map(|a| a.get()).unwrap_or(0.0)
     }
 
     /// A shortcut to access a specific atom that can be read with the `atomr` (or `atomr~`) node.
-    /// An alternative is the [atom] method to directly access the [AtomicFloat].
+    /// An alternative is the [CodeEngine::atom] method to directly access the [AtomicFloat].
     pub fn atom_set(&self, idx: usize, v: f32) {
         if let Some(at) = self.atom(idx) {
             at.set(v)
