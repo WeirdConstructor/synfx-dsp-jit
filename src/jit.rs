@@ -3,7 +3,10 @@
 // See README.md and COPYING for details.
 
 use crate::ast::{ASTBinOp, ASTFun, ASTNode};
-use crate::context::{DSPFunction, DSPNodeContext, DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary};
+use crate::context::{
+    DSPFunction, DSPNodeContext, DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary,
+    AUX_VAR_IDX_ISRATE, AUX_VAR_IDX_SRATE,
+};
 use cranelift::prelude::types::{F64, I32};
 use cranelift::prelude::InstBuilder;
 use cranelift::prelude::*;
@@ -201,6 +204,26 @@ impl JIT {
     //    pub fn translate_ast_node(&mut self, builder: FunctionBuilder<'a>,
 }
 
+fn constant_lookup(name: &str) -> Option<f64> {
+    match name {
+        "PI" => Some(std::f64::consts::PI),
+        "TAU" => Some(std::f64::consts::TAU),
+        "E" => Some(std::f64::consts::E),
+        "1PI" => Some(std::f64::consts::FRAC_1_PI),
+        "2PI" => Some(std::f64::consts::FRAC_2_PI),
+        "PI2" => Some(std::f64::consts::FRAC_PI_2),
+        "PI3" => Some(std::f64::consts::FRAC_PI_3),
+        "PI4" => Some(std::f64::consts::FRAC_PI_4),
+        "PI6" => Some(std::f64::consts::FRAC_PI_6),
+        "PI8" => Some(std::f64::consts::FRAC_PI_8),
+        "1SQRT2" => Some(std::f64::consts::FRAC_1_SQRT_2),
+        "2SQRT_PI" => Some(std::f64::consts::FRAC_2_SQRT_PI),
+        "LN2" => Some(std::f64::consts::LN_2),
+        "LN10" => Some(std::f64::consts::LN_10),
+        _ => None,
+    }
+}
+
 pub(crate) struct DSPFunctionTranslator<'a, 'b, 'c> {
     dsp_ctx: &'c mut DSPNodeContext,
     dsp_lib: &'b DSPNodeTypeLibrary,
@@ -356,13 +379,34 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
         match ast {
             ASTNode::Lit(v) => Ok(self.builder.ins().f64const(*v)),
             ASTNode::Var(name) => {
-                if name.starts_with('&') {
+                if let Some(c) = constant_lookup(name) {
+                    Ok(self.builder.ins().f64const(c))
+                } else if name.starts_with('&') {
                     let variable = self
                         .variables
                         .get(name)
                         .ok_or_else(|| JITCompileError::UndefinedVariable(name.to_string()))?;
                     let ptr = self.builder.use_var(*variable);
                     Ok(self.builder.ins().load(F64, MemFlags::new(), ptr, 0))
+                } else if name.starts_with('$') {
+                    let aux_vars = self
+                        .variables
+                        .get("&aux")
+                        .ok_or_else(|| JITCompileError::UndefinedVariable("&aux".to_string()))?;
+
+                    let pvs = self.builder.use_var(*aux_vars);
+                    let offs = match &name[..] {
+                        "$srate" => AUX_VAR_IDX_SRATE,
+                        "$israte" => AUX_VAR_IDX_ISRATE,
+                        _ => return Err(JITCompileError::UndefinedVariable(name.to_string())),
+                    };
+                    let aux_value = self.builder.ins().load(
+                        F64,
+                        MemFlags::new(),
+                        pvs,
+                        Offset32::new(offs as i32 * F64.bytes() as i32),
+                    );
+                    Ok(aux_value)
                 } else if name.starts_with('*') {
                     let pv_index = self
                         .dsp_ctx
@@ -386,17 +430,18 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         return Err(JITCompileError::InvalidReturnValueAccess(name.to_string()));
                     }
 
-                    let offs: i32 =
-                        match name.chars().nth(1) {
-                            Some('1') => 0,
-                            Some('2') => 1,
-                            Some('3') => 2,
-                            Some('4') => 3,
-                            Some('5') => 4,
-                            _ => {
-                                return Err(JITCompileError::InvalidReturnValueAccess(name.to_string()));
-                            },
-                        };
+                    let offs: i32 = match name.chars().nth(1) {
+                        Some('1') => 0,
+                        Some('2') => 1,
+                        Some('3') => 2,
+                        Some('4') => 3,
+                        Some('5') => 4,
+                        _ => {
+                            return Err(JITCompileError::InvalidReturnValueAccess(
+                                name.to_string(),
+                            ));
+                        }
+                    };
 
                     let return_vals = self
                         .variables
@@ -410,7 +455,6 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         Offset32::new(offs * F64.bytes() as i32),
                     );
                     Ok(ret_value)
-
                 } else {
                     let variable = self
                         .variables
@@ -563,8 +607,7 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                     i += 1;
                 }
 
-                let local_callee =
-                    self.module.declare_func_in_func(func_id, self.builder.func);
+                let local_callee = self.module.declare_func_in_func(func_id, self.builder.func);
                 let call = self.builder.ins().call(local_callee, &dsp_node_fun_params);
                 if node_type.has_return_value() {
                     Ok(self.builder.inst_results(call)[0])

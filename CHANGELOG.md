@@ -1,9 +1,13 @@
 0.6.0 (unreleased)
 ==================
 
+* Documentation: Added in [crate::stdlib] a rough documentation of the available variables and nodes.
+* Change: Refactored the use of auxilary variables. Sample rate variables are not
+prefixed with an `$` (`$srate` and `$israte`).
 * Feature: Added reading/writing into a shared buffer of atomic floats.
 See also `DSPNodeContext::atom` and `CodeEngine::atom`. Also added an example
-that shows how to control a DSPFunction with atoms. 
+that shows how to control a DSPFunction with atoms.
+* Feature: Added constants for PI, E, TAU and many others.
 
 0.5.3 (2022-08-05)
 ==================

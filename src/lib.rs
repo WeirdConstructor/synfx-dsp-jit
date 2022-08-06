@@ -37,6 +37,10 @@ which is a comprehensive DSP graph and synthesis library for developing a modula
 synthesizer in Rust, such as [HexoSynth](https://github.com/WeirdConstructor/HexoSynth).
 It is not the core of HexoDSP, but only provides a small optional part though.
 
+## Available DSP Nodes/Functions And Language Definition
+
+For this please consult the crate documentation in the standard library module: [crate::stdlib].
+
 ## Quick Start API
 
 To get you started quickly and learn how to use the API I recommend the [instant_compile_ast]
@@ -86,7 +90,7 @@ let jit = JIT::new(lib.clone(), ctx.clone());
 // This example shows how to use persistent variables (starting with '*')
 // to build a simple phase increment oscillator
 let ast = stmts(&[
-    assign("*phase", op_add(var("*phase"), op_mul(literal(440.0), var("israte")))),
+    assign("*phase", op_add(var("*phase"), op_mul(literal(440.0), var("$israte")))),
     _if(
         op_gt(var("*phase"), literal(1.0)),
         assign("*phase", op_sub(var("*phase"), literal(1.0))),
@@ -162,18 +166,6 @@ while not_done {
     not_done = false;
 }
 ```
-
-## Available DSP Nodes/Functions
-
-| DSPNodeType name + sig | Description |
-|-|-|
-| accum - input, reset -> sum | Accumulator |
-| phase - frequency, reset -> phase | Phase oscillator |
-| sin - radians -> sine | Sine function |
-| /% - a, b -> div, rem | Computes the float division and remainder of a and b |
-| atomr - index -> value | Reads an atomic float from a shared buffer |
-| atomr~ - index -> value | Reads a linear interpolated atomic float from a shared buffer |
-| atomw - index, value -> value | Writes an atomic float into a shared buffer |
 
 */
 

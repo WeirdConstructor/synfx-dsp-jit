@@ -2,6 +2,77 @@
 // This file is a part of synfx-dsp-jit. Released under GPL-3.0-or-later.
 // See README.md and COPYING for details.
 
+/*! Definition of the Intermediate Representation for the JIT compiler.
+
+This is a quick guide of the intermediate language you can pass into the JIT compiler
+in form of an [crate::ASTNode] tree.
+
+For a reference of the AST itself I recommend looking at [crate::ASTNode] and [crate::ASTBinOp].
+They are pretty self explanatory.
+
+Make sure to visit [crate::ast::build] too, it is an easy way to build an AST data structure.
+
+## Global Variables
+
+There are multiple different kinds of variables you can access:
+
+- Predefined [crate::DSPFunction] Parameters (available in every function):
+  - `in1` - First channel input
+  - `in2` - Second channel input
+  - `alpha` - Alpha parameter input
+  - `beta` - Beta parameter input
+  - `delta` - Delta parameter input
+  - `gamma` - Gamma parameter input
+  - `&sig1` - Writeable signal channel 1 output
+  - `&sig2` - Writeable signal channel 2 output
+- Global Constants
+  - `PI` - 3.14159...
+  - `TAU` - 2*PI
+  - `E` - Eulers number
+  - `1PI` - 1/PI
+  - `2PI` - 2/PI
+  - `PI2` - PI/2
+  - `PI3` - PI/3
+  - `PI4` - PI/4
+  - `PI6` - PI/6
+  - `PI8` - PI/8
+  - `1SQRT2` - 1/sqrt(2)
+  - `1SQRT_PI` - 1/sqrt(PI)
+  - `LN2` - Ln(2)
+  - `LN10` - Ln(10)
+- Global Variables / Auxilary Variables:
+  - `$srate` - The current sample rate in Hz
+  - `$israte` - The current sample rate in 1.0 / Hz
+- Persistent Variables (persistent across multiple calls, until a reset):
+  - `*...` - Any variable that starts with a `*` is stored across multiple calls.
+- Multiple Return Value Accessors
+  - First return value does not exist as variable, it just is the result of
+    the AST node itself, or the result of the node function.
+  - `%1` - Second return value
+  - `%2` - Third return value
+  - `%3` - Fourth return value
+  - `%4` - Fifth return value
+  - `%5` - Sixth return value
+
+## DSP Nodes
+
+I heavily recommend checking out [HexoSynth](https://github.com/WeirdConstructor/HexoSynth)
+if you plan to use `synfx-dsp-jit`, it offers a graphical environment for trying out
+all the following nodes in real time in a visual programming language (called WBlockDSP):
+
+| DSPNodeType name | Inputs | Outputs | Description |
+|-|-|-|-|
+| accum     | input, reset      | sum       | Accumulator, sums up the input |
+| phase     | frequency, reset  | phase     | Phase oscillator |
+| sin       | radians           | sine      | Sine function |
+| /%        | a, b              | div, rem  | Computes the float division and remainder of a and b |
+| atomr     | index             | value     | Reads an atomic float from a shared buffer |
+| atomr~    | index             | value     | Reads a linear interpolated atomic float from a shared buffer |
+| atomw     | index, value      | value     | Writes an atomic float into a shared buffer |
+
+*/
+
+
 use crate::stateful_dsp_node_type;
 use crate::stateless_dsp_node_type;
 use crate::{DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary, DSPState};

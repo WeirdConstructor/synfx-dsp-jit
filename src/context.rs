@@ -11,7 +11,17 @@ use std::sync::Arc;
 use synfx_dsp::AtomicFloat;
 
 /// The number of DSP atoms to reserve for the `atomw` and `atomr` nodes to read/write from/to.
-pub(crate) const MAX_DSP_ATOMS: usize = 512;
+pub const MAX_DSP_ATOMS: usize = 512;
+/// The number of temporary (sample) buffers to allocate:
+pub const MAX_TMP_BUFS: usize = 8; // with buffers 48kHz * 10 * 4 this amounts to ~29MB RAM
+/// The size of each temporary buffer:
+pub const TMP_BUF_SIZE: usize = 48000 * 10 * 4; // ~10 seconds of audio, at 4x of common sample rate
+
+/// Auxilary variables to access directly from the machine code.
+pub(crate) const AUX_VAR_COUNT: usize = 2;
+
+pub(crate) const AUX_VAR_IDX_SRATE: usize = 0;
+pub(crate) const AUX_VAR_IDX_ISRATE: usize = 1;
 
 /// This table holds all the DSP state including the state of the individual DSP nodes
 /// that were created by the [crate::jit::DSPFunctionTranslator].
@@ -548,6 +558,9 @@ pub struct DSPFunction {
     module: Option<JITModule>,
     /// Storage of persistent variables:
     persistent_vars: Vec<f64>,
+    /// Auxilary variables to access directly from the machine code. Holds information such as
+    /// the sample rate or the inverse of the sample rate.
+    aux_vars: [f64; AUX_VAR_COUNT],
     function: Option<
         fn(
             f64,
@@ -556,8 +569,7 @@ pub struct DSPFunction {
             f64,
             f64,
             f64,
-            f64,
-            f64,
+            *mut f64,
             *mut f64,
             *mut f64,
             *mut DSPState,
@@ -581,6 +593,7 @@ impl DSPFunction {
             node_state_init_reset: vec![],
             node_state_uids: vec![],
             persistent_vars: vec![],
+            aux_vars: [0.0, 0.0],
             function: None,
             dsp_ctx_generation,
             module: None,
@@ -601,8 +614,7 @@ impl DSPFunction {
                     f64,
                     f64,
                     f64,
-                    f64,
-                    f64,
+                    *mut f64,
                     *mut f64,
                     *mut f64,
                     *mut DSPState,
@@ -632,6 +644,8 @@ impl DSPFunction {
             (*self.state).srate = srate;
             (*self.state).israte = 1.0 / srate;
         }
+        self.aux_vars[AUX_VAR_IDX_SRATE] = srate;
+        self.aux_vars[AUX_VAR_IDX_ISRATE] = 1.0 / srate;
 
         for idx in self.node_state_init_reset.iter() {
             let typ = &self.node_state_types[*idx as usize];
@@ -647,6 +661,8 @@ impl DSPFunction {
             (*self.state).srate = srate;
             (*self.state).israte = 1.0 / srate;
         }
+        self.aux_vars[AUX_VAR_IDX_SRATE] = srate;
+        self.aux_vars[AUX_VAR_IDX_ISRATE] = 1.0 / srate;
 
         self.reset();
     }
@@ -764,9 +780,9 @@ impl DSPFunction {
         sig1: &mut f64,
         sig2: &mut f64,
     ) -> f64 {
-        let (srate, israte) = unsafe { ((*self.state).srate, (*self.state).israte) };
         let states_ptr: *mut *mut u8 = self.node_states.as_mut_ptr();
         let pers_vars_ptr: *mut f64 = self.persistent_vars.as_mut_ptr();
+        let aux_vars: *mut f64 = self.aux_vars.as_mut_ptr();
         let mut multi_returns = [0.0; 5];
         (unsafe { self.function.unwrap_unchecked() })(
             in1,
@@ -775,10 +791,9 @@ impl DSPFunction {
             beta,
             delta,
             gamma,
-            srate,
-            israte,
             sig1,
             sig2,
+            aux_vars,
             self.state,
             states_ptr,
             pers_vars_ptr,

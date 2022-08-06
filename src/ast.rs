@@ -5,15 +5,25 @@
 /// Binary operator for the AST
 #[derive(Debug, Clone, Copy)]
 pub enum ASTBinOp {
+    /// Addition "+"
     Add,
+    /// Substraction "-"
     Sub,
+    /// Multiplication "*"
     Mul,
+    /// Division "/"
     Div,
+    /// Equals comparison "=="
     Eq,
+    /// Not Equals comparison "!="
     Ne,
+    /// Less than comparison "<"
     Lt,
+    /// Less or equal comparison "<="
     Le,
+    /// Greater than comparison ">"
     Gt,
+    /// Greater or equal comparison ">="
     Ge,
 }
 
@@ -40,10 +50,9 @@ impl ASTFun {
                 "beta".to_string(),
                 "delta".to_string(),
                 "gamma".to_string(),
-                "srate".to_string(),
-                "israte".to_string(),
                 "&sig1".to_string(),
                 "&sig2".to_string(),
+                "&aux".to_string(),
                 "&state".to_string(),
                 "&fstate".to_string(),
                 "&pv".to_string(),

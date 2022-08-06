@@ -209,9 +209,11 @@ fn check_jit_sin_1() {
 
 fn exec_ast(ast: Box<ASTNode>, in1: f64, in2: f64) -> (f64, f64, f64) {
     let dsp_ctx = DSPNodeContext::new_ref();
+    dsp_ctx.borrow_mut().set_debug(true);
     let jit = JIT::new(get_default_library(), dsp_ctx.clone());
 
     let mut code = jit.compile(ASTFun::new(ast)).unwrap();
+    println!("DEBUG: {}", dsp_ctx.borrow().get_ir_dump());
 
     code.init(44100.0, None);
     let ret = code.exec_2in_2out(in1, in2);
@@ -223,9 +225,9 @@ fn exec_ast(ast: Box<ASTNode>, in1: f64, in2: f64) -> (f64, f64, f64) {
 #[test]
 fn check_jit_sample_rate_vars() {
     use synfx_dsp_jit::build::*;
-    let (_, _, ret) = exec_ast(var("srate"), 0.0, 0.0);
+    let (_, _, ret) = exec_ast(var("$srate"), 0.0, 0.0);
     assert_float_eq!(ret, 44100.0);
-    let (_, _, ret) = exec_ast(var("israte"), 0.0, 0.0);
+    let (_, _, ret) = exec_ast(var("$israte"), 0.0, 0.0);
     assert_float_eq!(ret, 1.0 / 44100.0);
 }
 
@@ -370,7 +372,7 @@ fn check_phasor_example() {
     let jit = JIT::new(lib.clone(), dsp_ctx.clone());
     let mut code = jit
         .compile(ASTFun::new(stmts(&[
-            assign("*phase", op_add(var("*phase"), op_mul(literal(440.0), var("israte")))),
+            assign("*phase", op_add(var("*phase"), op_mul(literal(440.0), var("$israte")))),
             _if(
                 op_gt(var("*phase"), literal(1.0)),
                 assign("*phase", op_sub(var("*phase"), literal(1.0))),
@@ -650,6 +652,64 @@ fn check_stdlib_atomw() {
     let x2 = dsp_ctx.borrow().atom(1).unwrap().get();
     assert_float_eq!(x1, 12.0);
     assert_float_eq!(x2, 13.0);
+
+    dsp_ctx.borrow_mut().free();
+}
+
+
+
+#[test]
+fn check_constants() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    dsp_ctx.borrow_mut().set_debug(true);
+    let lib = get_default_library();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = jit
+        .compile(ASTFun::new(stmts(&[
+            assign("*1", var("PI")),
+            assign("*2", var("TAU")),
+            assign("*3", var("E")),
+            assign("*4", var("1PI")),
+            assign("*5", var("2PI")),
+            assign("*6", var("PI2")),
+            assign("*7", var("PI3")),
+            assign("*8", var("PI4")),
+            assign("*9", var("PI6")),
+            assign("*10", var("PI8")),
+            assign("*11", var("1SQRT2")),
+            assign("*12", var("2SQRT_PI")),
+            assign("*13", var("LN2")),
+            assign("*14", var("LN10")),
+        ])))
+        .unwrap();
+    println!("DEBUG: {}", dsp_ctx.borrow().get_ir_dump());
+
+    code.init(44100.0, None);
+    code.exec_2in_2out(0.0, 0.0);
+
+    let consts = [
+        std::f64::consts::PI,
+        std::f64::consts::TAU,
+        std::f64::consts::E,
+        std::f64::consts::FRAC_1_PI,
+        std::f64::consts::FRAC_2_PI,
+        std::f64::consts::FRAC_PI_2,
+        std::f64::consts::FRAC_PI_3,
+        std::f64::consts::FRAC_PI_4,
+        std::f64::consts::FRAC_PI_6,
+        std::f64::consts::FRAC_PI_8,
+        std::f64::consts::FRAC_1_SQRT_2,
+        std::f64::consts::FRAC_2_SQRT_PI,
+        std::f64::consts::LN_2,
+        std::f64::consts::LN_10,
+    ];
+    for (i, c) in consts.iter().enumerate() {
+        let r = code.access_persistent_var(i).map(|var| *var).unwrap();
+        assert_float_eq!(r, c);
+    }
 
     dsp_ctx.borrow_mut().free();
 }
