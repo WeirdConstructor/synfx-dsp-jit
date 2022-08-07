@@ -2,6 +2,7 @@
 // This file is a part of synfx-dsp-jit. Released under GPL-3.0-or-later.
 // See README.md and COPYING for details.
 
+use crate::locked::*;
 use cranelift_jit::JITModule;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -10,17 +11,17 @@ use std::rc::Rc;
 use std::sync::Arc;
 use synfx_dsp::AtomicFloat;
 
-///// The number of temporary (sample) buffers to allocate:
-//pub const MAX_TMP_BUFS: usize = 8; // with buffers 48kHz * 10 * 4 this amounts to ~29MB RAM
-///// The size of each temporary buffer:
-//pub const TMP_BUF_SIZE: usize = 48000 * 10 * 4; // ~10 seconds of audio, at 4x of common sample rate
-
 /// Auxilary variables to access directly from the machine code.
 pub(crate) const AUX_VAR_COUNT: usize = 3;
 
 pub(crate) const AUX_VAR_IDX_SRATE: usize = 0;
 pub(crate) const AUX_VAR_IDX_ISRATE: usize = 1;
 pub(crate) const AUX_VAR_IDX_RESET: usize = 2;
+
+pub enum DSPNodeContextError {
+    UnknownTable(usize),
+    WrongTableSize { tbl_idx: usize, new_size: usize, old_size: usize },
+}
 
 /// Configures the environment that will be available to the [DSPFunction]
 /// that is provided by [DSPNodeContext].
@@ -33,6 +34,9 @@ pub struct DSPContextConfig {
     pub atom_count: usize,
     /// The number of buffers available to `bufr`/`bufw` and their individual sizes.
     pub buffers: Vec<usize>,
+    /// The number of available tables for the `tblr`/`tblw` operations.
+    /// The tables can be swapped out at runtime using the [DSPNodeContext::send_table] method.
+    pub tables: Vec<Arc<Vec<f64>>>,
 }
 
 impl Default for DSPContextConfig {
@@ -40,6 +44,7 @@ impl Default for DSPContextConfig {
         Self {
             atom_count: 512,
             buffers: vec![48000 * 4; 16], // provide up to a few seconds of sound, depending on sample rate here...
+            tables: vec![Arc::new(vec![0.0; 16])],
         }
     }
 }
@@ -83,6 +88,15 @@ impl DSPNodeContext {
         atoms.resize_with(config.atom_count, || Arc::new(AtomicFloat::new(0.0)));
         let atoms_state = atoms.clone();
 
+        let buffer_lens = config.buffers.clone();
+        let mut buffers = vec![];
+        for blen in buffer_lens.iter() {
+            buffers.push(vec![0.0; *blen]);
+        }
+        let buffers = LockedMutPtrs::new(buffers);
+
+        let tables = LockedPtrs::new(config.tables.clone());
+
         Self {
             config,
             state: Box::into_raw(Box::new(DSPState {
@@ -91,6 +105,8 @@ impl DSPNodeContext {
                 srate: 44100.0,
                 israte: 1.0 / 44100.0,
                 atoms: atoms_state,
+                buffers,
+                tables,
             })),
             node_states: HashMap::new(),
             generation: 0,
@@ -162,6 +178,25 @@ impl DSPNodeContext {
         } else {
             Err("No DSPFunction in DSPNodeContext".to_string())
         }
+    }
+
+    /// Tries to send a new table to the backend. You have to make sure the table
+    /// has exactly the same size as the previous table given in the [DSPContextConfig].
+    /// Otherwise a [DSPNodeContextError] is returned.
+    pub fn send_table(
+        &mut self,
+        tbl_idx: usize,
+        table: Arc<Vec<f64>>,
+    ) -> Result<(), DSPNodeContextError> {
+        let config_tbl_len = 0;
+
+        // Err(DSPNodeContextError::UnknwonTable(tbl_idx)
+
+        Err(DSPNodeContextError::WrongTableSize {
+            tbl_idx,
+            new_size: table.len(),
+            old_size: config_tbl_len,
+        })
     }
 
     /// Adds a [DSPNodeState] to the currently compiled [DSPFunction] and returns
@@ -603,10 +638,11 @@ pub struct DSPFunction {
             *mut f64,
             *mut f64,
             *mut DSPState,
-            *mut *mut u8,
+            *const *mut u8,
             *mut f64,
             *mut f64,
-            *mut *mut f64,
+            *const *mut f64,
+            *const *const f64,
         ) -> f64,
     >,
 }
@@ -650,10 +686,11 @@ impl DSPFunction {
                     *mut f64,
                     *mut f64,
                     *mut DSPState,
-                    *mut *mut u8,
+                    *const *mut u8,
                     *mut f64,
                     *mut f64,
-                    *mut *mut f64,
+                    *const *mut f64,
+                    *const *const f64,
                 ) -> f64,
             >(function)
         });
@@ -825,10 +862,11 @@ impl DSPFunction {
                 0.0
             };
         }
-        let states_ptr: *mut *mut u8 = self.node_states.as_mut_ptr();
+        let states_ptr: *const *mut u8 = self.node_states.as_mut_ptr();
         let pers_vars_ptr: *mut f64 = self.persistent_vars.as_mut_ptr();
         let aux_vars: *mut f64 = self.aux_vars.as_mut_ptr();
-        let bufs: *mut *mut f64 = std::ptr::null_mut();
+        let bufs: *const *mut f64 = unsafe { (*self.state).buffers.pointers().as_ptr() };
+        let tables: *const *const f64 = unsafe { (*self.state).tables.pointers().as_ptr() };
         let mut multi_returns = [0.0; 5];
 
         (unsafe { self.function.unwrap_unchecked() })(
@@ -846,6 +884,7 @@ impl DSPFunction {
             pers_vars_ptr,
             (&mut multi_returns) as *mut f64,
             bufs,
+            tables,
         )
     }
 
@@ -905,6 +944,8 @@ pub struct DSPState {
     pub srate: f64,
     pub israte: f64,
     pub atoms: Vec<Arc<AtomicFloat>>,
+    pub buffers: LockedMutPtrs<Vec<f64>, f64>,
+    pub tables: LockedPtrs<Arc<Vec<f64>>, f64>,
 }
 
 /// An enum to specify the position of value and [DSPState] and [DSPNodeState] parameters

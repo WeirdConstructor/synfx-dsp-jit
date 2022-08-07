@@ -241,6 +241,7 @@ pub enum JITCompileError {
     BadDefinedParams,
     UnknownFunction(String),
     UndefinedVariable(String),
+    UnknownTable(usize),
     InvalidReturnValueAccess(String),
     DeclareTopFunError(String),
     DefineTopFunError(String),
@@ -544,20 +545,40 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
 
                 Ok(value)
             }
-            ASTNode::BufOp { op, buf_idx, idx, val } => {
-                if *buf_idx >= self.dsp_ctx.config.buffers.len() {
-                    return Err(JITCompileError::UnknownBuffer(*buf_idx));
-                }
-
-                let buf_len = self.dsp_ctx.config.buffers[*buf_idx];
-
+            ASTNode::BufOp { op, idx, val } => {
                 let idx = self.compile(idx)?;
 
                 let ptr_type = self.module.target_config().pointer_type();
-                let buf_var = self
-                    .variables
-                    .get("&bufs")
-                    .ok_or_else(|| JITCompileError::UndefinedVariable("&bufs".to_string()))?;
+
+                let (buf_var, buf_idx, buf_len) = match op {
+                    ASTBufOp::Write(buf_idx)
+                    | ASTBufOp::Read(buf_idx)
+                    | ASTBufOp::ReadLin(buf_idx) => {
+                        let buf_var = self.variables.get("&bufs").ok_or_else(|| {
+                            JITCompileError::UndefinedVariable("&bufs".to_string())
+                        })?;
+
+                        if *buf_idx >= self.dsp_ctx.config.buffers.len() {
+                            return Err(JITCompileError::UnknownBuffer(*buf_idx));
+                        }
+                        let buf_len = self.dsp_ctx.config.buffers[*buf_idx];
+
+                        (buf_var, buf_idx, buf_len)
+                    }
+                    ASTBufOp::TableRead(tbl_idx) | ASTBufOp::TableReadLin(tbl_idx) => {
+                        let buf_var = self.variables.get("&tables").ok_or_else(|| {
+                            JITCompileError::UndefinedVariable("&tables".to_string())
+                        })?;
+
+                        if *tbl_idx >= self.dsp_ctx.config.tables.len() {
+                            return Err(JITCompileError::UnknownTable(*tbl_idx));
+                        }
+                        let buf_len = self.dsp_ctx.config.tables[*tbl_idx].len();
+
+                        (buf_var, tbl_idx, buf_len)
+                    }
+                };
+
                 let bptr = self.builder.use_var(*buf_var);
                 let buffer = self.builder.ins().load(
                     ptr_type,
@@ -572,18 +593,19 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                 let ptr = self.builder.ins().iadd(buffer, idx);
 
                 match op {
-                    ASTBufOp::Write => {
-                        let val =
-                            val.as_ref().ok_or_else(|| JITCompileError::NoValueBufferWrite(*buf_idx))?;
+                    ASTBufOp::Write { .. } => {
+                        let val = val
+                            .as_ref()
+                            .ok_or_else(|| JITCompileError::NoValueBufferWrite(*buf_idx))?;
                         let val = self.compile(val)?;
 
                         self.builder.ins().store(MemFlags::new(), val, ptr, 0);
                         Ok(self.builder.ins().f64const(0.0))
                     }
-                    ASTBufOp::Read => {
+                    ASTBufOp::Read { .. } | ASTBufOp::TableRead { .. } => {
                         Ok(self.builder.ins().load(ptr_type, MemFlags::new(), ptr, 0))
                     }
-                    ASTBufOp::ReadLin => {
+                    ASTBufOp::ReadLin { .. } | ASTBufOp::TableReadLin { .. } => {
                         Ok(self.builder.ins().load(ptr_type, MemFlags::new(), ptr, 0))
                     }
                 }

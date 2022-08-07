@@ -27,15 +27,19 @@ pub enum ASTBinOp {
     Ge,
 }
 
-/// Buffer operation
+/// Buffer and Table operations
 #[derive(Debug, Clone, Copy)]
 pub enum ASTBufOp {
-    /// Write to sample position
-    Write,
-    /// Read from sample position
-    Read,
-    /// Read with linear interpolation
-    ReadLin,
+    /// Write to sample position, the argument is the buffer index
+    Write(usize),
+    /// Read from sample position, the argument is the buffer index
+    Read(usize),
+    /// Read with linear interpolation, the argument is the buffer index
+    ReadLin(usize),
+    /// Read from a read-only table, the argument is the table index
+    TableRead(usize),
+    /// Read from an read-only table with linear interpolation, the argument is the table index
+    TableReadLin(usize),
 }
 
 /// Top level structure that holds an AST.
@@ -69,6 +73,7 @@ impl ASTFun {
                 "&pv".to_string(),
                 "&rv".to_string(),
                 "&bufs".to_string(),
+                "&tables".to_string(),
             ],
             locals: vec![], // vec!["x".to_string(), "y".to_string()],
             ast,
@@ -208,9 +213,11 @@ pub enum ASTNode {
     /// You have to make sure that the IDs don't change and that you are not using
     /// the same ID for multiple stateful DSP nodes here.
     Call(String, u64, Vec<Box<ASTNode>>),
-    /// Perform a buffer operation on the specified buffer at the given index with an
-    /// optional value.
-    BufOp { op: ASTBufOp, buf_idx: usize, idx: Box<ASTNode>, val: Option<Box<ASTNode>> },
+    /// Perform a buffer or table operation on the specified buffer/table at the given
+    /// index with an optional value. Tables and buffers don't share their index space,
+    /// each have their own index space. The buffer or table index is passed as the
+    /// [ASTBufOp] enumeration.
+    BufOp { op: ASTBufOp, idx: Box<ASTNode>, val: Option<Box<ASTNode>> },
     /// A list of statements that must be executed in the here specified order.
     Stmts(Vec<Box<ASTNode>>),
 }
@@ -224,7 +231,7 @@ impl ASTNode {
             ASTNode::BinOp(op, _, _) => format!("binop:{:?}", op),
             ASTNode::If(_, _, _) => format!("if"),
             ASTNode::Call(fun, fs, _) => format!("call{}:{}", fs, fun),
-            ASTNode::BufOp { op, buf_idx, .. } => format!("buf{}:{:?}", buf_idx, op),
+            ASTNode::BufOp { op, .. } => format!("buf:{:?}", op),
             ASTNode::Stmts(stmts) => format!("stmts:{}", stmts.len()),
         }
     }
@@ -350,15 +357,23 @@ pub mod build {
     }
 
     pub fn buf_write(buf_idx: usize, idx: Box<ASTNode>, val: Box<ASTNode>) -> Box<ASTNode> {
-        Box::new(ASTNode::BufOp { op: ASTBufOp::Write, buf_idx, idx, val: Some(val) })
+        Box::new(ASTNode::BufOp { op: ASTBufOp::Write(buf_idx), idx, val: Some(val) })
     }
 
     pub fn buf_read(buf_idx: usize, idx: Box<ASTNode>) -> Box<ASTNode> {
-        Box::new(ASTNode::BufOp { op: ASTBufOp::Read, buf_idx, idx, val: None })
+        Box::new(ASTNode::BufOp { op: ASTBufOp::Read(buf_idx), idx, val: None })
     }
 
     pub fn buf_read_lerp(buf_idx: usize, idx: Box<ASTNode>) -> Box<ASTNode> {
-        Box::new(ASTNode::BufOp { op: ASTBufOp::ReadLin, buf_idx, idx, val: None })
+        Box::new(ASTNode::BufOp { op: ASTBufOp::ReadLin(buf_idx), idx, val: None })
+    }
+
+    pub fn table_read(tbl_idx: usize, idx: Box<ASTNode>) -> Box<ASTNode> {
+        Box::new(ASTNode::BufOp { op: ASTBufOp::TableRead(tbl_idx), idx, val: None })
+    }
+
+    pub fn table_read_lerp(tbl_idx: usize, idx: Box<ASTNode>) -> Box<ASTNode> {
+        Box::new(ASTNode::BufOp { op: ASTBufOp::TableReadLin(tbl_idx), idx, val: None })
     }
 
     pub fn stmts(s: &[Box<ASTNode>]) -> Box<ASTNode> {

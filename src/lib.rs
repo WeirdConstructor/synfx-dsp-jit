@@ -173,6 +173,7 @@ mod ast;
 #[allow(rustdoc::private_intra_doc_links)]
 mod context;
 mod jit;
+pub mod locked;
 pub mod engine;
 pub mod stdlib;
 
