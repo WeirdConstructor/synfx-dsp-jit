@@ -225,6 +225,9 @@ pub enum ASTNode {
     /// the same ID for multiple stateful DSP nodes here.
     Call(String, u64, Vec<Box<ASTNode>>),
     /// Declare the length of a buffer. By default all buffers are only 16 samples long.
+    /// If you change the length of a buffer, a new buffer will be allocated on the fly
+    /// and sent to the backend. [crate::DSPNodeContext] and [crate::DSPFunction] take care of
+    /// disposing the old buffer allocation and preserving the data as good as possible.
     BufDeclare { buf_idx: usize, len: usize },
     /// Perform a buffer or table operation on the specified buffer/table at the given
     /// index with an optional value. Tables and buffers don't share their index space,

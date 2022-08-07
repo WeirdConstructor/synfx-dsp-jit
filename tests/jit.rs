@@ -898,6 +898,52 @@ fn check_node_buffers() {
     dsp_ctx.borrow_mut().free();
 }
 
+
+#[test]
+fn check_node_bufdeclare() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    let lib = get_default_library();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = unwrap_jit_error(jit
+        .compile(ASTFun::new(stmts(&[
+            buf_declare(0, 10),
+            buf_declare(1, 23),
+            buf_write(0, literal(0.0), literal(0.23)),
+            buf_write(1, literal(0.0), literal(0.46)),
+            assign("&sig1", buf_read(0, literal(0.0))),
+            assign("&sig2", buf_read(1, literal(0.0))),
+            op_add(buf_len(0), buf_len(1)),
+        ]))));
+
+    code.init(44100.0, None);
+    let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.23);
+    assert_float_eq!(s2, 0.46);
+    assert_float_eq!(ret, 16.0);
+
+    let old_code = code;
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = unwrap_jit_error(jit
+        .compile(ASTFun::new(stmts(&[
+            buf_declare(0, 5),
+            buf_declare(1, 40),
+            assign("&sig1", buf_read(0, literal(0.0))),
+            assign("&sig2", buf_read(1, literal(0.0))),
+            op_add(buf_len(0), buf_len(1)),
+        ]))));
+
+    code.init(44100.0, Some(&old_code));
+    let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.775);
+    assert_float_eq!(s2, 0.58);
+    assert_float_eq!(ret, 0.7);
+
+    dsp_ctx.borrow_mut().free();
+}
+
 #[test]
 fn check_node_tables() {
     use synfx_dsp_jit::build::*;

@@ -77,13 +77,17 @@ all the following nodes in real time in a visual programming language (called WB
 
 ## Buffers and Tables
 
-You can pass a configuration to [crate::DSPNodeContext::new] which lets you define sample buffers
-and sample tables that are made available to the JIT. You can access these using the specialized
-[crate::ast::ASTNode::BufOp] operations (found in [crate::ast::ASTBufOp]).
+You can pass a configuration to [crate::DSPNodeContext::new] which lets you
+define the number of possible buffers and a set of tables. Double precision
+buffers have to be declared by the JIT AST itself using
+[crate::ASTNode::BufDeclare].
 
-Buffers can be written by the JIT compiled code, while Tables can only be read. But you can
-swap out tables at runtime more easily. The idea is, that tables are shared read-only information,
-while the buffers are owned by the DSP function itself.
+Tables are vectors of single precision floats, which are provided by the
+caller/user of [crate::DSPNodeContext] at creation time. You can however swap
+out the tables at runtime later with others. Either directly by accessing
+[crate::DSPFunction::with_dsp_state] or via the
+[crate::engine::CodeEngine::send_table] method.
+
 
 */
 
