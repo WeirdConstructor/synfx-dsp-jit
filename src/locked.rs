@@ -87,6 +87,7 @@ where
 {
     data: Vec<T>,
     pointers: Vec<*mut E>,
+    lens: Vec<u64>,
     phantom: std::marker::PhantomData<E>,
 }
 
@@ -96,11 +97,13 @@ where
 {
     pub fn new(mut v: Vec<T>) -> Self {
         let mut pointers: Vec<*mut E> = vec![];
+        let mut lens = vec![];
         for elem in v.iter_mut() {
             pointers.push(elem.as_mut_ptr());
+            lens.push(elem.len() as u64);
         }
 
-        Self { data: v, pointers, phantom: std::marker::PhantomData }
+        Self { data: v, pointers, lens, phantom: std::marker::PhantomData }
     }
 
     /// Swaps out one element in the locked vector.
@@ -113,11 +116,13 @@ where
         if idx >= self.pointers.len() {
             Err(elem)
         } else {
-            if self.data[idx].len() != elem.len() {
+            if elem.len() == 0 {
                 return Err(elem);
             }
+
             let ret = std::mem::replace(&mut self.data[idx], elem);
             self.pointers[idx] = self.data[idx].as_mut_ptr();
+            self.lens[idx] = self.data[idx].len() as u64;
             Ok(ret)
         }
     }
@@ -133,6 +138,11 @@ where
             return 0;
         }
         self.data[idx].len()
+    }
+
+    #[inline]
+    pub fn lens(&self) -> &[u64] {
+        self.lens.as_ref()
     }
 
     #[inline]
@@ -179,6 +189,7 @@ where
 {
     data: Vec<T>,
     pointers: Vec<*const E>,
+    lens: Vec<u64>,
     phantom: std::marker::PhantomData<E>,
 }
 
@@ -188,11 +199,13 @@ where
 {
     pub fn new(v: Vec<T>) -> Self {
         let mut pointers: Vec<*const E> = vec![];
+        let mut lens = vec![];
         for elem in v.iter() {
             pointers.push(elem.as_ptr());
+            lens.push(elem.len() as u64);
         }
 
-        Self { data: v, pointers, phantom: std::marker::PhantomData }
+        Self { data: v, pointers, lens, phantom: std::marker::PhantomData }
     }
 
     /// Swaps out one element in the locked vector.
@@ -205,11 +218,13 @@ where
         if idx >= self.pointers.len() {
             Err(elem)
         } else {
-            if self.data[idx].len() != elem.len() {
+            if elem.len() == 0 {
                 return Err(elem);
             }
+
             let ret = std::mem::replace(&mut self.data[idx], elem);
             self.pointers[idx] = self.data[idx].as_ptr();
+            self.lens[idx] = self.data[idx].len() as u64;
             Ok(ret)
         }
     }
@@ -225,6 +240,11 @@ where
             return 0;
         }
         self.data[idx].len()
+    }
+
+    #[inline]
+    pub fn lens(&self) -> &[u64] {
+        self.lens.as_ref()
     }
 
     #[inline]

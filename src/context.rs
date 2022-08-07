@@ -11,6 +11,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use synfx_dsp::AtomicFloat;
 
+/// Default size of undeclared buffers.
+pub const BUFFER_DEFAULT_SIZE: usize = 16;
+
 /// Auxilary variables to access directly from the machine code.
 pub(crate) const AUX_VAR_COUNT: usize = 3;
 
@@ -32,8 +35,8 @@ pub enum DSPNodeContextError {
 pub struct DSPContextConfig {
     /// The number of atoms available to `atomr`/`atomw`.
     pub atom_count: usize,
-    /// The number of buffers available to `bufr`/`bufw` and their individual sizes.
-    pub buffers: Vec<usize>,
+    /// The number of buffers available to `bufr`/`bufw`.
+    pub buffer_count: usize,
     /// The number of available tables for the `tblr`/`tblw` operations.
     /// The tables can be swapped out at runtime using the [DSPNodeContext::send_table] method.
     pub tables: Vec<Arc<Vec<f64>>>,
@@ -43,7 +46,7 @@ impl Default for DSPContextConfig {
     fn default() -> Self {
         Self {
             atom_count: 512,
-            buffers: vec![48000 * 4; 16], // provide up to a few seconds of sound, depending on sample rate here...
+            buffer_count: 16,
             tables: vec![Arc::new(vec![0.0; 16])],
         }
     }
@@ -88,10 +91,9 @@ impl DSPNodeContext {
         atoms.resize_with(config.atom_count, || Arc::new(AtomicFloat::new(0.0)));
         let atoms_state = atoms.clone();
 
-        let buffer_lens = config.buffers.clone();
         let mut buffers = vec![];
-        for blen in buffer_lens.iter() {
-            buffers.push(vec![0.0; *blen]);
+        for _ in 0..config.buffer_count {
+            buffers.push(vec![0.0; BUFFER_DEFAULT_SIZE]);
         }
         let buffers = LockedMutPtrs::new(buffers);
 
@@ -642,7 +644,9 @@ pub struct DSPFunction {
             *mut f64,
             *mut f64,
             *const *mut f64,
+            *const u64,
             *const *const f64,
+            *const u64,
         ) -> f64,
     >,
 }
@@ -690,7 +694,9 @@ impl DSPFunction {
                     *mut f64,
                     *mut f64,
                     *const *mut f64,
+                    *const u64,
                     *const *const f64,
+                    *const u64,
                 ) -> f64,
             >(function)
         });
@@ -866,7 +872,9 @@ impl DSPFunction {
         let pers_vars_ptr: *mut f64 = self.persistent_vars.as_mut_ptr();
         let aux_vars: *mut f64 = self.aux_vars.as_mut_ptr();
         let bufs: *const *mut f64 = unsafe { (*self.state).buffers.pointers().as_ptr() };
+        let buf_lens: *const u64 = unsafe { (*self.state).buffers.lens().as_ptr() };
         let tables: *const *const f64 = unsafe { (*self.state).tables.pointers().as_ptr() };
+        let table_lens: *const u64 = unsafe { (*self.state).tables.lens().as_ptr() };
         let mut multi_returns = [0.0; 5];
 
         (unsafe { self.function.unwrap_unchecked() })(
@@ -884,7 +892,9 @@ impl DSPFunction {
             pers_vars_ptr,
             (&mut multi_returns) as *mut f64,
             bufs,
+            buf_lens,
             tables,
+            table_lens,
         )
     }
 

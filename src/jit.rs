@@ -555,12 +555,27 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
 
                 Ok(value)
             }
+            ASTNode::BufDeclare { buf_idx, len } => {
+                if *buf_idx >= self.dsp_ctx.config.buffer_count {
+                    return Err(JITCompileError::UnknownBuffer(*buf_idx));
+                }
+
+                Ok(self.builder.ins().f64const(0.0))
+                // Check if the len given here differs from the len recorded in DSPNodeContext
+                // TODO: Make an extra field for buffer lengths in DSPNodeContext
+                // If len differs, push a "buffer_alloc_task" with a length to DSPNodeContext
+                // When finalizing the function, take the tasks and copy them into the function.
+                // In the backend, when calling DSPFunction::init, replace the buffers
+                // from the tasks with those in the new function. Copy over the old data to the
+                // new buffer. The old buffer is stored in the DSPFunction for disposal on the next
+                // roundtrip.
+            },
             ASTNode::BufOp { op, idx, val } => {
                 let idx = self.compile(idx)?;
 
                 let ptr_type = self.module.target_config().pointer_type();
 
-                let (buf_var, buf_idx, buf_len) = match op {
+                let (buf_var, buf_idx, buf_lens) = match op {
                     ASTBufOp::Write(buf_idx)
                     | ASTBufOp::Read(buf_idx)
                     | ASTBufOp::ReadLin(buf_idx) => {
@@ -568,24 +583,30 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                             JITCompileError::UndefinedVariable("&bufs".to_string())
                         })?;
 
-                        if *buf_idx >= self.dsp_ctx.config.buffers.len() {
+                        let buf_lens = self.variables.get("&buf_lens").ok_or_else(|| {
+                            JITCompileError::UndefinedVariable("&buf_lens".to_string())
+                        })?;
+
+                        if *buf_idx >= self.dsp_ctx.config.buffer_count {
                             return Err(JITCompileError::UnknownBuffer(*buf_idx));
                         }
-                        let buf_len = self.dsp_ctx.config.buffers[*buf_idx];
 
-                        (buf_var, buf_idx, buf_len)
+                        (buf_var, buf_idx, buf_lens)
                     }
                     ASTBufOp::TableRead(tbl_idx) | ASTBufOp::TableReadLin(tbl_idx) => {
                         let buf_var = self.variables.get("&tables").ok_or_else(|| {
                             JITCompileError::UndefinedVariable("&tables".to_string())
                         })?;
 
+                        let tbl_lens = self.variables.get("&table_lens").ok_or_else(|| {
+                            JITCompileError::UndefinedVariable("&table_lens".to_string())
+                        })?;
+
                         if *tbl_idx >= self.dsp_ctx.config.tables.len() {
                             return Err(JITCompileError::UnknownTable(*tbl_idx));
                         }
-                        let buf_len = self.dsp_ctx.config.tables[*tbl_idx].len();
 
-                        (buf_var, tbl_idx, buf_len)
+                        (buf_var, tbl_idx, tbl_lens)
                     }
                 };
 
@@ -597,13 +618,21 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                     Offset32::new(*buf_idx as i32 * self.ptr_w as i32),
                 );
 
+                let lenptr = self.builder.use_var(*buf_lens);
+                let len = self.builder.ins().load(
+                    I64,
+                    MemFlags::new(),
+                    lenptr,
+                    Offset32::new(*buf_idx as i32 * self.ptr_w as i32),
+                );
+
                 let orig_idx = idx;
                 let idx = self.builder.ins().floor(idx);
                 let orig_fint_idx = idx;
                 let idx = self.builder.ins().fcvt_to_uint(I64, idx);
                 let orig_int_idx = idx;
 
-                let idx = self.builder.ins().urem_imm(idx, buf_len as i64);
+                let idx = self.builder.ins().urem(idx, len);
                 let idx = self.builder.ins().imul_imm(idx, self.ptr_w as i64);
                 let ptr = self.builder.ins().iadd(buffer, idx);
 
@@ -623,7 +652,7 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                     ASTBufOp::ReadLin { .. } | ASTBufOp::TableReadLin { .. } => {
                         let fract = self.builder.ins().fsub(orig_idx, orig_fint_idx);
                         let idx = self.builder.ins().iadd_imm(orig_int_idx, 1 as i64);
-                        let idx = self.builder.ins().urem_imm(idx, buf_len as i64);
+                        let idx = self.builder.ins().urem(idx, len);
                         let idx = self.builder.ins().imul_imm(idx, self.ptr_w as i64);
                         let ptr2 = self.builder.ins().iadd(buffer, idx);
 

@@ -73,7 +73,9 @@ impl ASTFun {
                 "&pv".to_string(),
                 "&rv".to_string(),
                 "&bufs".to_string(),
+                "&buf_lens".to_string(),
                 "&tables".to_string(),
+                "&table_lens".to_string(),
             ],
             locals: vec![], // vec!["x".to_string(), "y".to_string()],
             ast,
@@ -152,7 +154,7 @@ impl ASTFun {
 pub fn walk_ast<F: FnMut(&mut ASTNode)>(node: &mut ASTNode, f: &mut F) {
     f(node);
     match node {
-        ASTNode::Lit(_) | ASTNode::Var(_) => {}
+        ASTNode::Lit(_) | ASTNode::Var(_) | ASTNode::BufDeclare { .. } => {}
         ASTNode::Assign(_, expr) => {
             walk_ast(expr.as_mut(), f);
         }
@@ -213,6 +215,8 @@ pub enum ASTNode {
     /// You have to make sure that the IDs don't change and that you are not using
     /// the same ID for multiple stateful DSP nodes here.
     Call(String, u64, Vec<Box<ASTNode>>),
+    /// Declare the length of a buffer. By default all buffers are only 16 samples long.
+    BufDeclare { buf_idx: usize, len: usize },
     /// Perform a buffer or table operation on the specified buffer/table at the given
     /// index with an optional value. Tables and buffers don't share their index space,
     /// each have their own index space. The buffer or table index is passed as the
@@ -231,6 +235,7 @@ impl ASTNode {
             ASTNode::BinOp(op, _, _) => format!("binop:{:?}", op),
             ASTNode::If(_, _, _) => format!("if"),
             ASTNode::Call(fun, fs, _) => format!("call{}:{}", fs, fun),
+            ASTNode::BufDeclare { buf_idx, len } => format!("bufdecl{}:{}", buf_idx, len),
             ASTNode::BufOp { op, .. } => format!("buf:{:?}", op),
             ASTNode::Stmts(stmts) => format!("stmts:{}", stmts.len()),
         }
@@ -244,6 +249,7 @@ impl ASTNode {
             ASTNode::BinOp(_op, _, _) => "binop",
             ASTNode::If(_, _, _) => "if",
             ASTNode::Call(_fun, _, _) => "call",
+            ASTNode::BufDeclare { .. } => "bufdecl",
             ASTNode::BufOp { .. } => "bufop",
             ASTNode::Stmts(_stmts) => "stmts",
         }
@@ -257,6 +263,7 @@ impl ASTNode {
         match self {
             ASTNode::Lit(_) => (),
             ASTNode::Var(_) => (),
+            ASTNode::BufDeclare { .. } => (),
             ASTNode::Assign(_, e) => {
                 s += &e.dump(indent + 1);
             }
@@ -354,6 +361,10 @@ pub mod build {
 
     pub fn op_div(a: Box<ASTNode>, b: Box<ASTNode>) -> Box<ASTNode> {
         Box::new(ASTNode::BinOp(ASTBinOp::Div, a, b))
+    }
+
+    pub fn buf_declare(buf_idx: usize, len: usize) -> Box<ASTNode> {
+        Box::new(ASTNode::BufDeclare { buf_idx, len })
     }
 
     pub fn buf_write(buf_idx: usize, idx: Box<ASTNode>, val: Box<ASTNode>) -> Box<ASTNode> {
