@@ -42,6 +42,15 @@ pub enum ASTBufOp {
     TableReadLin(usize),
 }
 
+/// Length of a buffer or table for `ASTNode::Len(...)`
+#[derive(Debug, Clone, Copy)]
+pub enum ASTLenOp {
+    /// Length of a buffer is queries, argument is buffer index
+    Buffer(usize),
+    /// Length of a table is queries, argument is table index
+    Table(usize),
+}
+
 /// Top level structure that holds an AST.
 ///
 /// It holds the names of the local variables. For now you can't
@@ -154,7 +163,7 @@ impl ASTFun {
 pub fn walk_ast<F: FnMut(&mut ASTNode)>(node: &mut ASTNode, f: &mut F) {
     f(node);
     match node {
-        ASTNode::Lit(_) | ASTNode::Var(_) | ASTNode::BufDeclare { .. } => {}
+        ASTNode::Lit(_) | ASTNode::Var(_) | ASTNode::BufDeclare { .. } | ASTNode::Len(_) => {}
         ASTNode::Assign(_, expr) => {
             walk_ast(expr.as_mut(), f);
         }
@@ -222,6 +231,8 @@ pub enum ASTNode {
     /// each have their own index space. The buffer or table index is passed as the
     /// [ASTBufOp] enumeration.
     BufOp { op: ASTBufOp, idx: Box<ASTNode>, val: Option<Box<ASTNode>> },
+    /// To retrieve the length of a buffer or table.
+    Len(ASTLenOp),
     /// A list of statements that must be executed in the here specified order.
     Stmts(Vec<Box<ASTNode>>),
 }
@@ -236,6 +247,7 @@ impl ASTNode {
             ASTNode::If(_, _, _) => format!("if"),
             ASTNode::Call(fun, fs, _) => format!("call{}:{}", fs, fun),
             ASTNode::BufDeclare { buf_idx, len } => format!("bufdecl{}:{}", buf_idx, len),
+            ASTNode::Len(op) => format!("len:{:?}", op),
             ASTNode::BufOp { op, .. } => format!("buf:{:?}", op),
             ASTNode::Stmts(stmts) => format!("stmts:{}", stmts.len()),
         }
@@ -250,6 +262,7 @@ impl ASTNode {
             ASTNode::If(_, _, _) => "if",
             ASTNode::Call(_fun, _, _) => "call",
             ASTNode::BufDeclare { .. } => "bufdecl",
+            ASTNode::Len(_) => "len",
             ASTNode::BufOp { .. } => "bufop",
             ASTNode::Stmts(_stmts) => "stmts",
         }
@@ -264,6 +277,7 @@ impl ASTNode {
             ASTNode::Lit(_) => (),
             ASTNode::Var(_) => (),
             ASTNode::BufDeclare { .. } => (),
+            ASTNode::Len(_) => (),
             ASTNode::Assign(_, e) => {
                 s += &e.dump(indent + 1);
             }
@@ -367,6 +381,14 @@ pub mod build {
         Box::new(ASTNode::BufDeclare { buf_idx, len })
     }
 
+    pub fn buf_len(buf_idx: usize) -> Box<ASTNode> {
+        Box::new(ASTNode::Len(ASTLenOp::Buffer(buf_idx)))
+    }
+
+    pub fn table_len(tbl_idx: usize) -> Box<ASTNode> {
+        Box::new(ASTNode::Len(ASTLenOp::Table(tbl_idx)))
+    }
+
     pub fn buf_write(buf_idx: usize, idx: Box<ASTNode>, val: Box<ASTNode>) -> Box<ASTNode> {
         Box::new(ASTNode::BufOp { op: ASTBufOp::Write(buf_idx), idx, val: Some(val) })
     }
@@ -375,7 +397,7 @@ pub mod build {
         Box::new(ASTNode::BufOp { op: ASTBufOp::Read(buf_idx), idx, val: None })
     }
 
-    pub fn buf_read_lerp(buf_idx: usize, idx: Box<ASTNode>) -> Box<ASTNode> {
+    pub fn buf_read_lin(buf_idx: usize, idx: Box<ASTNode>) -> Box<ASTNode> {
         Box::new(ASTNode::BufOp { op: ASTBufOp::ReadLin(buf_idx), idx, val: None })
     }
 
@@ -383,7 +405,7 @@ pub mod build {
         Box::new(ASTNode::BufOp { op: ASTBufOp::TableRead(tbl_idx), idx, val: None })
     }
 
-    pub fn table_read_lerp(tbl_idx: usize, idx: Box<ASTNode>) -> Box<ASTNode> {
+    pub fn table_read_lin(tbl_idx: usize, idx: Box<ASTNode>) -> Box<ASTNode> {
         Box::new(ASTNode::BufOp { op: ASTBufOp::TableReadLin(tbl_idx), idx, val: None })
     }
 

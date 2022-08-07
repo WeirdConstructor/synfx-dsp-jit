@@ -39,7 +39,7 @@ pub struct DSPContextConfig {
     pub buffer_count: usize,
     /// The number of available tables for the `tblr`/`tblw` operations.
     /// The tables can be swapped out at runtime using the [DSPNodeContext::send_table] method.
-    pub tables: Vec<Arc<Vec<f64>>>,
+    pub tables: Vec<Arc<Vec<f32>>>,
 }
 
 impl Default for DSPContextConfig {
@@ -645,7 +645,7 @@ pub struct DSPFunction {
             *mut f64,
             *const *mut f64,
             *const u64,
-            *const *const f64,
+            *const *const f32,
             *const u64,
         ) -> f64,
     >,
@@ -695,7 +695,7 @@ impl DSPFunction {
                     *mut f64,
                     *const *mut f64,
                     *const u64,
-                    *const *const f64,
+                    *const *const f32,
                     *const u64,
                 ) -> f64,
             >(function)
@@ -873,7 +873,7 @@ impl DSPFunction {
         let aux_vars: *mut f64 = self.aux_vars.as_mut_ptr();
         let bufs: *const *mut f64 = unsafe { (*self.state).buffers.pointers().as_ptr() };
         let buf_lens: *const u64 = unsafe { (*self.state).buffers.lens().as_ptr() };
-        let tables: *const *const f64 = unsafe { (*self.state).tables.pointers().as_ptr() };
+        let tables: *const *const f32 = unsafe { (*self.state).tables.pointers().as_ptr() };
         let table_lens: *const u64 = unsafe { (*self.state).tables.lens().as_ptr() };
         let mut multi_returns = [0.0; 5];
 
@@ -955,7 +955,7 @@ pub struct DSPState {
     pub israte: f64,
     pub atoms: Vec<Arc<AtomicFloat>>,
     pub buffers: LockedMutPtrs<Vec<f64>, f64>,
-    pub tables: LockedPtrs<Arc<Vec<f64>>, f64>,
+    pub tables: LockedPtrs<Arc<Vec<f32>>, f32>,
 }
 
 /// An enum to specify the position of value and [DSPState] and [DSPNodeState] parameters

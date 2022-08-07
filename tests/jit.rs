@@ -853,17 +853,19 @@ fn check_node_buffers() {
             ]), None),
             assign("&sig1", buf_read(0, literal(0.0))),
             assign("&sig2", buf_read(0, literal(1.0))),
+            buf_len(0),
         ]))));
 
     code.init(44100.0, None);
-    let (s1, s2, _) = code.exec_2in_2out(0.0, 0.0);
+    let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
     assert_float_eq!(s1, 0.23);
     assert_float_eq!(s2, 0.46);
+    assert_float_eq!(ret, 16.0);
 
     unsafe {
         // Modify and check via the DSPState structure:
         code.with_dsp_state(|state| {
-            let mut new_buf = vec![0.0; (*state).buffers.element_len(0)];
+            let mut new_buf = vec![0.0; (*state).buffers.element_len(0) * 2];
             new_buf[0] = 0.55;
             new_buf[1] = 0.85;
             let old = (*state).buffers.swap_element(0, new_buf).unwrap();
@@ -873,17 +875,18 @@ fn check_node_buffers() {
     }
 
     // Verify the modifications:
-    let (s1, s2, _) = code.exec_2in_2out(0.0, 0.0);
+    let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
     assert_float_eq!(s1, 0.55);
     assert_float_eq!(s2, 0.85);
+    assert_float_eq!(ret, 32.0);
 
     let old_code = code;
     let jit = JIT::new(lib.clone(), dsp_ctx.clone());
     let mut code = unwrap_jit_error(jit
         .compile(ASTFun::new(stmts(&[
-            assign("&sig1", buf_read_lerp(0, literal(0.75))),
-            assign("&sig2", buf_read_lerp(0, literal(0.1))),
-            buf_read_lerp(0, literal(0.5)),
+            assign("&sig1", buf_read_lin(0, literal(0.75))),
+            assign("&sig2", buf_read_lin(0, literal(0.1))),
+            buf_read_lin(0, literal(0.5)),
         ]))));
 
     code.init(44100.0, Some(&old_code));
@@ -891,6 +894,53 @@ fn check_node_buffers() {
     assert_float_eq!(s1, 0.775);
     assert_float_eq!(s2, 0.58);
     assert_float_eq!(ret, 0.7);
+
+    dsp_ctx.borrow_mut().free();
+}
+
+#[test]
+fn check_node_tables() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    let lib = get_default_library();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = unwrap_jit_error(jit
+        .compile(ASTFun::new(stmts(&[
+            assign("&sig1", table_read(0, literal(0.0))),
+            assign("&sig2", table_read(0, literal(1.0))),
+            op_add(table_len(0), table_read_lin(0, literal(0.75))),
+        ]))));
+
+    unsafe {
+        // Modify and check via the DSPState structure:
+        code.with_dsp_state(|state| {
+            let mut new_buf = vec![0.0; 8];
+            new_buf[0] = 0.55;
+            new_buf[1] = 0.85;
+            let old = (*state).tables.swap_element(0, std::sync::Arc::new(new_buf)).unwrap();
+        })
+    }
+
+    code.init(44100.0, None);
+    let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.55);
+    assert_float_eq!(s2, 0.85);
+    assert_float_eq!(ret, 8.775);
+
+    unsafe {
+        // Modify and check via the DSPState structure:
+        code.with_dsp_state(|state| {
+            let mut new_buf = vec![0.33; 1];
+            let old = (*state).tables.swap_element(0, std::sync::Arc::new(new_buf)).unwrap();
+        })
+    }
+
+    let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.33);
+    assert_float_eq!(s2, 0.33);
+    assert_float_eq!(ret, 1.33);
 
     dsp_ctx.borrow_mut().free();
 }

@@ -2,12 +2,12 @@
 // This file is a part of synfx-dsp-jit. Released under GPL-3.0-or-later.
 // See README.md and COPYING for details.
 
-use crate::ast::{ASTBinOp, ASTBufOp, ASTFun, ASTNode};
+use crate::ast::{ASTBinOp, ASTBufOp, ASTFun, ASTNode, ASTLenOp};
 use crate::context::{
     DSPFunction, DSPNodeContext, DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary,
     AUX_VAR_IDX_ISRATE, AUX_VAR_IDX_RESET, AUX_VAR_IDX_SRATE,
 };
-use cranelift::prelude::types::{F64, I32, I64};
+use cranelift::prelude::types::{F64, F32, I32, I64};
 use cranelift::prelude::InstBuilder;
 use cranelift::prelude::*;
 use cranelift_codegen::ir::immediates::Offset32;
@@ -570,6 +570,42 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                 // new buffer. The old buffer is stored in the DSPFunction for disposal on the next
                 // roundtrip.
             },
+            ASTNode::Len(op) => {
+                let (buf_idx, buf_lens) = match op {
+                    ASTLenOp::Buffer(buf_idx) => {
+                        if *buf_idx >= self.dsp_ctx.config.buffer_count {
+                            return Err(JITCompileError::UnknownBuffer(*buf_idx));
+                        }
+
+                        let buf_lens = self.variables.get("&buf_lens").ok_or_else(|| {
+                            JITCompileError::UndefinedVariable("&buf_lens".to_string())
+                        })?;
+
+                        (*buf_idx, buf_lens)
+                    },
+                    ASTLenOp::Table(tbl_idx) => {
+                        let tbl_lens = self.variables.get("&table_lens").ok_or_else(|| {
+                            JITCompileError::UndefinedVariable("&table_lens".to_string())
+                        })?;
+
+                        if *tbl_idx >= self.dsp_ctx.config.tables.len() {
+                            return Err(JITCompileError::UnknownTable(*tbl_idx));
+                        }
+
+                        (*tbl_idx, tbl_lens)
+                    },
+                };
+
+                let lenptr = self.builder.use_var(*buf_lens);
+                let len = self.builder.ins().load(
+                    I64,
+                    MemFlags::new(),
+                    lenptr,
+                    Offset32::new(buf_idx as i32 * self.ptr_w as i32),
+                );
+
+                Ok(self.builder.ins().fcvt_from_uint(F64, len))
+            },
             ASTNode::BufOp { op, idx, val } => {
                 let idx = self.compile(idx)?;
 
@@ -632,8 +668,14 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                 let idx = self.builder.ins().fcvt_to_uint(I64, idx);
                 let orig_int_idx = idx;
 
+                let data_width =
+                    match op {
+                        ASTBufOp::TableReadLin { .. } | ASTBufOp::TableRead { .. } => F32.bytes() as i64,
+                        _ => F64.bytes() as i64
+                    };
+
                 let idx = self.builder.ins().urem(idx, len);
-                let idx = self.builder.ins().imul_imm(idx, self.ptr_w as i64);
+                let idx = self.builder.ins().imul_imm(idx, data_width);
                 let ptr = self.builder.ins().iadd(buffer, idx);
 
                 match op {
@@ -646,18 +688,32 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         self.builder.ins().store(MemFlags::new(), val, ptr, 0);
                         Ok(self.builder.ins().f64const(0.0))
                     }
-                    ASTBufOp::Read { .. } | ASTBufOp::TableRead { .. } => {
+                    ASTBufOp::Read { .. } => {
                         Ok(self.builder.ins().load(F64, MemFlags::new(), ptr, 0))
+                    }
+                    ASTBufOp::TableRead { .. } => {
+                        let sample = self.builder.ins().load(F32, MemFlags::new(), ptr, 0);
+                        Ok(self.builder.ins().fpromote(F64, sample))
                     }
                     ASTBufOp::ReadLin { .. } | ASTBufOp::TableReadLin { .. } => {
                         let fract = self.builder.ins().fsub(orig_idx, orig_fint_idx);
                         let idx = self.builder.ins().iadd_imm(orig_int_idx, 1 as i64);
                         let idx = self.builder.ins().urem(idx, len);
-                        let idx = self.builder.ins().imul_imm(idx, self.ptr_w as i64);
+                        let idx = self.builder.ins().imul_imm(idx, data_width);
                         let ptr2 = self.builder.ins().iadd(buffer, idx);
 
-                        let a = self.builder.ins().load(F64, MemFlags::new(), ptr, 0);
-                        let b = self.builder.ins().load(F64, MemFlags::new(), ptr2, 0);
+                        let (a, b) =
+                            if data_width == (I32.bytes() as i64) {
+                                let a = self.builder.ins().load(F32, MemFlags::new(), ptr, 0);
+                                let b = self.builder.ins().load(F32, MemFlags::new(), ptr2, 0);
+                                let a = self.builder.ins().fpromote(F64, a);
+                                let b = self.builder.ins().fpromote(F64, b);
+                                (a, b)
+                            } else {
+                                let a = self.builder.ins().load(F64, MemFlags::new(), ptr, 0);
+                                let b = self.builder.ins().load(F64, MemFlags::new(), ptr2, 0);
+                                (a, b)
+                            };
                         let one = self.builder.ins().f64const(1.0);
                         let fract_1 = self.builder.ins().fsub(one, fract);
                         let a = self.builder.ins().fmul(a, fract_1);
