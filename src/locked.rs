@@ -81,24 +81,26 @@ impl<E> MutPointable<E> for Vec<E> {
 ///     (*pointers[1]) = 20.0;
 /// };
 ///```
-pub struct LockedMutPtrs<T, E> where T: MutPointable<E> {
+pub struct LockedMutPtrs<T, E>
+where
+    T: MutPointable<E>,
+{
     data: Vec<T>,
     pointers: Vec<*mut E>,
     phantom: std::marker::PhantomData<E>,
 }
 
-impl<T, E> LockedMutPtrs<T, E> where T: MutPointable<E> {
+impl<T, E> LockedMutPtrs<T, E>
+where
+    T: MutPointable<E>,
+{
     pub fn new(mut v: Vec<T>) -> Self {
         let mut pointers: Vec<*mut E> = vec![];
         for elem in v.iter_mut() {
             pointers.push(elem.as_mut_ptr());
         }
 
-        Self {
-            data: v,
-            pointers,
-            phantom: std::marker::PhantomData,
-        }
+        Self { data: v, pointers, phantom: std::marker::PhantomData }
     }
 
     /// Swaps out one element in the locked vector.
@@ -111,6 +113,9 @@ impl<T, E> LockedMutPtrs<T, E> where T: MutPointable<E> {
         if idx >= self.pointers.len() {
             Err(elem)
         } else {
+            if self.data[idx].len() != elem.len() {
+                return Err(elem);
+            }
             let ret = std::mem::replace(&mut self.data[idx], elem);
             self.pointers[idx] = self.data[idx].as_mut_ptr();
             Ok(ret)
@@ -123,11 +128,18 @@ impl<T, E> LockedMutPtrs<T, E> where T: MutPointable<E> {
     }
 
     #[inline]
+    pub fn element_len(&self, idx: usize) -> usize {
+        if idx >= self.data.len() {
+            return 0;
+        }
+        self.data[idx].len()
+    }
+
+    #[inline]
     pub fn pointers(&self) -> &[*mut E] {
         self.pointers.as_ref()
     }
 }
-
 
 /// This type locks up a Vec<> after creation and gives you a pointer to
 /// a vector of pointers: `*const *const T`.
@@ -161,24 +173,26 @@ impl<T, E> LockedMutPtrs<T, E> where T: MutPointable<E> {
 ///     assert_eq!((*pointers[1].offset(5)), 2);
 /// };
 ///```
-pub struct LockedPtrs<T, E> where T: Pointable<E> {
+pub struct LockedPtrs<T, E>
+where
+    T: Pointable<E>,
+{
     data: Vec<T>,
     pointers: Vec<*const E>,
     phantom: std::marker::PhantomData<E>,
 }
 
-impl<T, E> LockedPtrs<T, E> where T: Pointable<E> {
+impl<T, E> LockedPtrs<T, E>
+where
+    T: Pointable<E>,
+{
     pub fn new(v: Vec<T>) -> Self {
         let mut pointers: Vec<*const E> = vec![];
         for elem in v.iter() {
             pointers.push(elem.as_ptr());
         }
 
-        Self {
-            data: v,
-            pointers,
-            phantom: std::marker::PhantomData,
-        }
+        Self { data: v, pointers, phantom: std::marker::PhantomData }
     }
 
     /// Swaps out one element in the locked vector.
@@ -191,6 +205,9 @@ impl<T, E> LockedPtrs<T, E> where T: Pointable<E> {
         if idx >= self.pointers.len() {
             Err(elem)
         } else {
+            if self.data[idx].len() != elem.len() {
+                return Err(elem);
+            }
             let ret = std::mem::replace(&mut self.data[idx], elem);
             self.pointers[idx] = self.data[idx].as_ptr();
             Ok(ret)
@@ -200,6 +217,14 @@ impl<T, E> LockedPtrs<T, E> where T: Pointable<E> {
     #[inline]
     pub fn len(&self) -> usize {
         self.pointers.len()
+    }
+
+    #[inline]
+    pub fn element_len(&self, idx: usize) -> usize {
+        if idx >= self.data.len() {
+            return 0;
+        }
+        self.data[idx].len()
     }
 
     #[inline]

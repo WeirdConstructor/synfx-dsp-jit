@@ -7,7 +7,7 @@ use crate::context::{
     DSPFunction, DSPNodeContext, DSPNodeSigBit, DSPNodeType, DSPNodeTypeLibrary,
     AUX_VAR_IDX_ISRATE, AUX_VAR_IDX_RESET, AUX_VAR_IDX_SRATE,
 };
-use cranelift::prelude::types::{F64, I32};
+use cranelift::prelude::types::{F64, I32, I64};
 use cranelift::prelude::InstBuilder;
 use cranelift::prelude::*;
 use cranelift_codegen::ir::immediates::Offset32;
@@ -155,9 +155,19 @@ impl JIT {
         self.translate(prog)?;
 
         let mut module = self.module.take().expect("Module still loaded");
-        module
-            .define_function(id, &mut self.ctx)
-            .map_err(|e| JITCompileError::DefineTopFunError(e.to_string()))?;
+        module.define_function(id, &mut self.ctx).map_err(|e| {
+            match e {
+                cranelift_module::ModuleError::Compilation(e) => {
+                    JITCompileError::DefineTopFunError(cranelift_codegen::print_errors::pretty_error(
+                        &self.ctx.func,
+                        e,
+                    ))
+                },
+                _ => {
+                    JITCompileError::DefineTopFunError(format!("{:?}", e))
+                }
+            }
+        })?;
 
         module.clear_context(&mut self.ctx);
         module.finalize_definitions();
@@ -587,7 +597,12 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                     Offset32::new(*buf_idx as i32 * self.ptr_w as i32),
                 );
 
+                let orig_idx = idx;
                 let idx = self.builder.ins().floor(idx);
+                let orig_fint_idx = idx;
+                let idx = self.builder.ins().fcvt_to_uint(I64, idx);
+                let orig_int_idx = idx;
+
                 let idx = self.builder.ins().urem_imm(idx, buf_len as i64);
                 let idx = self.builder.ins().imul_imm(idx, self.ptr_w as i64);
                 let ptr = self.builder.ins().iadd(buffer, idx);
@@ -603,10 +618,22 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         Ok(self.builder.ins().f64const(0.0))
                     }
                     ASTBufOp::Read { .. } | ASTBufOp::TableRead { .. } => {
-                        Ok(self.builder.ins().load(ptr_type, MemFlags::new(), ptr, 0))
+                        Ok(self.builder.ins().load(F64, MemFlags::new(), ptr, 0))
                     }
                     ASTBufOp::ReadLin { .. } | ASTBufOp::TableReadLin { .. } => {
-                        Ok(self.builder.ins().load(ptr_type, MemFlags::new(), ptr, 0))
+                        let fract = self.builder.ins().fsub(orig_idx, orig_fint_idx);
+                        let idx = self.builder.ins().iadd_imm(orig_int_idx, 1 as i64);
+                        let idx = self.builder.ins().urem_imm(idx, buf_len as i64);
+                        let idx = self.builder.ins().imul_imm(idx, self.ptr_w as i64);
+                        let ptr2 = self.builder.ins().iadd(buffer, idx);
+
+                        let a = self.builder.ins().load(F64, MemFlags::new(), ptr, 0);
+                        let b = self.builder.ins().load(F64, MemFlags::new(), ptr2, 0);
+                        let one = self.builder.ins().f64const(1.0);
+                        let fract_1 = self.builder.ins().fsub(one, fract);
+                        let a = self.builder.ins().fmul(a, fract_1);
+                        let b = self.builder.ins().fmul(b, fract);
+                        Ok(self.builder.ins().fadd(a, b))
                     }
                 }
             }

@@ -784,7 +784,6 @@ fn check_reset() {
     dsp_ctx.borrow_mut().free();
 }
 
-
 #[test]
 fn check_node_sh() {
     use synfx_dsp_jit::build::*;
@@ -820,4 +819,78 @@ fn check_node_sh() {
     let (s1, s2, _) = code.exec_2in_2out(-0.9, 1.0);
     assert_float_eq!(s1, -0.9);
     assert_float_eq!(s2, -0.9);
+
+    dsp_ctx.borrow_mut().free();
+}
+
+fn unwrap_jit_error(r: Result<Box<DSPFunction>, JITCompileError>) -> Box<DSPFunction> {
+    match r {
+        Err(JITCompileError::DefineTopFunError(e)) => {
+            eprintln!("{}", e);
+            panic!("{}", e)
+        },
+        Err(e) => {
+            eprintln!("{:#?}", e);
+            panic!("{:#?}", e)
+        },
+        Ok(fun) => fun,
+    }
+}
+
+#[test]
+fn check_node_buffers() {
+    use synfx_dsp_jit::build::*;
+
+    let dsp_ctx = DSPNodeContext::new_ref();
+    let lib = get_default_library();
+
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = unwrap_jit_error(jit
+        .compile(ASTFun::new(stmts(&[
+            _if(var("$reset"), stmts(&[
+                buf_write(0, literal(0.0), literal(0.23)),
+                buf_write(0, literal(1.0), literal(0.46)),
+            ]), None),
+            assign("&sig1", buf_read(0, literal(0.0))),
+            assign("&sig2", buf_read(0, literal(1.0))),
+        ]))));
+
+    code.init(44100.0, None);
+    let (s1, s2, _) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.23);
+    assert_float_eq!(s2, 0.46);
+
+    unsafe {
+        // Modify and check via the DSPState structure:
+        code.with_dsp_state(|state| {
+            let mut new_buf = vec![0.0; (*state).buffers.element_len(0)];
+            new_buf[0] = 0.55;
+            new_buf[1] = 0.85;
+            let old = (*state).buffers.swap_element(0, new_buf).unwrap();
+            assert_float_eq!(old[0], 0.23);
+            assert_float_eq!(old[1], 0.46);
+        })
+    }
+
+    // Verify the modifications:
+    let (s1, s2, _) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.55);
+    assert_float_eq!(s2, 0.85);
+
+    let old_code = code;
+    let jit = JIT::new(lib.clone(), dsp_ctx.clone());
+    let mut code = unwrap_jit_error(jit
+        .compile(ASTFun::new(stmts(&[
+            assign("&sig1", buf_read_lerp(0, literal(0.75))),
+            assign("&sig2", buf_read_lerp(0, literal(0.1))),
+            buf_read_lerp(0, literal(0.5)),
+        ]))));
+
+    code.init(44100.0, Some(&old_code));
+    let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.775);
+    assert_float_eq!(s2, 0.58);
+    assert_float_eq!(ret, 0.7);
+
+    dsp_ctx.borrow_mut().free();
 }

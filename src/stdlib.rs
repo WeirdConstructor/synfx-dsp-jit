@@ -75,6 +75,16 @@ all the following nodes in real time in a visual programming language (called WB
 | s&h       | input, set        | value     | A sample & hold node that samples it's input on a rising edge at 'set'. |
 | s&h~      | input, set        | value     | A sample & hold node that continously samples it's input if 'set' is set. |
 
+## Buffers and Tables
+
+You can pass a configuration to [crate::DSPNodeContext::new] which lets you define sample buffers
+and sample tables that are made available to the JIT. You can access these using the specialized
+[crate::ast::ASTNode::BufOp] operations (found in [crate::ast::ASTBufOp]).
+
+Buffers can be written by the JIT compiled code, while Tables can only be read. But you can
+swap out tables at runtime more easily. The idea is, that tables are shared read-only information,
+while the buffers are owned by the DSP function itself.
+
 */
 
 use crate::stateful_dsp_node_type;
