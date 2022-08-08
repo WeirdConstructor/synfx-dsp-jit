@@ -5,6 +5,7 @@
 * Change: Refactored the use of auxilary variables. Sample rate variables are not
 prefixed with an `$` (`$srate` and `$israte`).
 * Change: Persistent variables will now also be resetted to 0.0 after a reset or first initialization.
+* Change: The `phase` node got a reset input now.
 * Feature: Added reading/writing into a shared buffer of atomic floats.
 See also `DSPNodeContext::atom` and `CodeEngine::atom`. Also added an example
 that shows how to control a DSPFunction with atoms.

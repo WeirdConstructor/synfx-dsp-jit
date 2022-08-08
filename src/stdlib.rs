@@ -140,6 +140,7 @@ stateful_dsp_node_type! {
 pub struct PhaseNodeState {
     pub israte: f64,
     pub value: f64,
+    pub trig: Trigger,
 }
 
 impl PhaseNodeState {
@@ -151,24 +152,29 @@ impl PhaseNodeState {
 
 impl Default for PhaseNodeState {
     fn default() -> Self {
-        Self { israte: 1.0 / 44100.0, value: 0.0 }
+        Self { israte: 1.0 / 44100.0, value: 0.0, trig: Trigger::new() }
     }
 }
 
-extern "C" fn process_phase(freq: f64, state: *mut PhaseNodeState) -> f64 {
+extern "C" fn process_phase(freq: f64, reset: f64, state: *mut PhaseNodeState) -> f64 {
     let mut state = unsafe { &mut *state };
     state.value += freq * state.israte;
-    state.value = state.value.fract();
+    if state.trig.check_trigger(reset as f32) {
+        state.value = 0.0;
+    } else {
+        state.value = state.value.fract();
+    }
     state.value
 }
 
 stateful_dsp_node_type! {
-    PhaseNodeType, PhaseNodeState => process_phase "phase" "vSr"
+    PhaseNodeType, PhaseNodeState => process_phase "phase" "vvSr"
     doc
     "A very simple oscillator that outputs a rising sawtooth wave to 'phase' (range 0.0 to 1.0) with the \
-    frequency 'freq' (range 0.0 to 22050.0)."
+    frequency 'freq' (range 0.0 to 22050.0). The phase will be reset to 0.0 when a rising edge is detected on 'reset'."
     inputs
     0 "freq"
+    1 "reset"
     outputs
     0 "phase"
 }

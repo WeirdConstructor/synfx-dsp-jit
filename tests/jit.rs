@@ -528,7 +528,10 @@ fn check_stdlib_phase() {
 
     let jit = JIT::new(lib.clone(), dsp_ctx.clone());
     let mut code = jit
-        .compile(ASTFun::new(stmts(&[assign("&sig1", call("phase", 1, &[literal(1000.0)]))])))
+        .compile(ASTFun::new(stmts(&[assign(
+            "&sig1",
+            call("phase", 1, &[literal(1000.0), call("atomr", 0, &[literal(0.0)])]),
+        )])))
         .unwrap();
 
     code.init(44100.0, None);
@@ -564,6 +567,15 @@ fn check_stdlib_phase() {
     }
     let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
     assert_float_eq!(s1, 0.7891);
+
+    // Test reset:
+    dsp_ctx.borrow().atom(0).unwrap().set(1.0);
+    let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.0);
+    let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.02267);
+    let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
+    assert_float_eq!(s1, 0.02267 * 2.0);
 
     dsp_ctx.borrow_mut().free();
 }
@@ -828,11 +840,11 @@ fn unwrap_jit_error(r: Result<Box<DSPFunction>, JITCompileError>) -> Box<DSPFunc
         Err(JITCompileError::DefineTopFunError(e)) => {
             eprintln!("{}", e);
             panic!("{}", e)
-        },
+        }
         Err(e) => {
             eprintln!("{:#?}", e);
             panic!("{:#?}", e)
-        },
+        }
         Ok(fun) => fun,
     }
 }
@@ -845,16 +857,19 @@ fn check_node_buffers() {
     let lib = get_default_library();
 
     let jit = JIT::new(lib.clone(), dsp_ctx.clone());
-    let mut code = unwrap_jit_error(jit
-        .compile(ASTFun::new(stmts(&[
-            _if(var("$reset"), stmts(&[
+    let mut code = unwrap_jit_error(jit.compile(ASTFun::new(stmts(&[
+        _if(
+            var("$reset"),
+            stmts(&[
                 buf_write(0, literal(0.0), literal(0.23)),
                 buf_write(0, literal(1.0), literal(0.46)),
-            ]), None),
-            assign("&sig1", buf_read(0, literal(0.0))),
-            assign("&sig2", buf_read(0, literal(1.0))),
-            buf_len(0),
-        ]))));
+            ]),
+            None,
+        ),
+        assign("&sig1", buf_read(0, literal(0.0))),
+        assign("&sig2", buf_read(0, literal(1.0))),
+        buf_len(0),
+    ]))));
 
     code.init(44100.0, None);
     let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
@@ -882,12 +897,11 @@ fn check_node_buffers() {
 
     let old_code = code;
     let jit = JIT::new(lib.clone(), dsp_ctx.clone());
-    let mut code = unwrap_jit_error(jit
-        .compile(ASTFun::new(stmts(&[
-            assign("&sig1", buf_read_lin(0, literal(0.75))),
-            assign("&sig2", buf_read_lin(0, literal(0.1))),
-            buf_read_lin(0, literal(0.5)),
-        ]))));
+    let mut code = unwrap_jit_error(jit.compile(ASTFun::new(stmts(&[
+        assign("&sig1", buf_read_lin(0, literal(0.75))),
+        assign("&sig2", buf_read_lin(0, literal(0.1))),
+        buf_read_lin(0, literal(0.5)),
+    ]))));
 
     code.init(44100.0, Some(&old_code));
     let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
@@ -898,7 +912,6 @@ fn check_node_buffers() {
     dsp_ctx.borrow_mut().free();
 }
 
-
 #[test]
 fn check_node_bufdeclare() {
     use synfx_dsp_jit::build::*;
@@ -907,16 +920,15 @@ fn check_node_bufdeclare() {
     let lib = get_default_library();
 
     let jit = JIT::new(lib.clone(), dsp_ctx.clone());
-    let mut code = unwrap_jit_error(jit
-        .compile(ASTFun::new(stmts(&[
-            buf_declare(0, 10),
-            buf_declare(1, 23),
-            buf_write(0, literal(0.0), literal(0.23)),
-            buf_write(1, literal(0.0), literal(0.46)),
-            assign("&sig1", buf_read(0, literal(0.0))),
-            assign("&sig2", buf_read(1, literal(0.0))),
-            op_add(buf_len(0), buf_len(1)),
-        ]))));
+    let mut code = unwrap_jit_error(jit.compile(ASTFun::new(stmts(&[
+        buf_declare(0, 10),
+        buf_declare(1, 23),
+        buf_write(0, literal(0.0), literal(0.23)),
+        buf_write(1, literal(0.0), literal(0.46)),
+        assign("&sig1", buf_read(0, literal(0.0))),
+        assign("&sig2", buf_read(1, literal(0.0))),
+        op_add(buf_len(0), buf_len(1)),
+    ]))));
 
     code.init(44100.0, None);
     let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
@@ -926,14 +938,13 @@ fn check_node_bufdeclare() {
 
     let old_code = code;
     let jit = JIT::new(lib.clone(), dsp_ctx.clone());
-    let mut code = unwrap_jit_error(jit
-        .compile(ASTFun::new(stmts(&[
-            buf_declare(0, 5),
-            buf_declare(1, 40),
-            assign("&sig1", buf_read(0, literal(0.0))),
-            assign("&sig2", buf_read(1, literal(0.0))),
-            op_add(buf_len(0), buf_len(1)),
-        ]))));
+    let mut code = unwrap_jit_error(jit.compile(ASTFun::new(stmts(&[
+        buf_declare(0, 5),
+        buf_declare(1, 40),
+        assign("&sig1", buf_read(0, literal(0.0))),
+        assign("&sig2", buf_read(1, literal(0.0))),
+        op_add(buf_len(0), buf_len(1)),
+    ]))));
 
     code.init(44100.0, Some(&old_code));
     let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
@@ -953,12 +964,11 @@ fn check_node_tables() {
     let lib = get_default_library();
 
     let jit = JIT::new(lib.clone(), dsp_ctx.clone());
-    let mut code = unwrap_jit_error(jit
-        .compile(ASTFun::new(stmts(&[
-            assign("&sig1", table_read(0, literal(0.0))),
-            assign("&sig2", table_read(0, literal(1.0))),
-            op_add(table_len(0), table_read_lin(0, literal(0.75))),
-        ]))));
+    let mut code = unwrap_jit_error(jit.compile(ASTFun::new(stmts(&[
+        assign("&sig1", table_read(0, literal(0.0))),
+        assign("&sig2", table_read(0, literal(1.0))),
+        op_add(table_len(0), table_read_lin(0, literal(0.75))),
+    ]))));
 
     unsafe {
         code.with_dsp_state(|state| {
