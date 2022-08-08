@@ -14,6 +14,9 @@ that shows how to control a DSPFunction with atoms.
 * Feature: Added `s&h` and `s&h~` sample and hold nodes.
 * Feature: Added buffers with AST operations for writing and reading the buffer contents.
 Aswell as an AST operation for declaring the buffer size.
+* Feature: Added fixed read only tables with f32 samples that can be swapped out from the
+frontend. They are similar to the buffers, but they are not writeable. They are perfect for
+shared pieces of audio samples.
 
 0.5.3 (2022-08-05)
 ==================

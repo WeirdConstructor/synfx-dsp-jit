@@ -44,11 +44,11 @@ pub struct DSPContextConfig {
 
 impl Default for DSPContextConfig {
     fn default() -> Self {
-        Self {
-            atom_count: 32,
-            buffer_count: 16,
-            tables: vec![Arc::new(vec![0.0; 16])],
+        let mut tables = vec![];
+        for _ in 0..16 {
+            tables.push(Arc::new(vec![0.0; 1]));
         }
+        Self { atom_count: 32, buffer_count: 16, tables }
     }
 }
 
@@ -261,13 +261,16 @@ impl DSPNodeContext {
         module: JITModule,
     ) -> Option<Box<DSPFunction>> {
         if let Some(mut next_dsp_fun) = self.next_dsp_fun.take() {
-            for (i, (len, declare)) in self.buffer_lengths.iter().zip(self.buffer_declare.iter()).enumerate() {
+            for (i, (len, declare)) in
+                self.buffer_lengths.iter().zip(self.buffer_declare.iter()).enumerate()
+            {
                 if *len != *declare {
                     next_dsp_fun.add_buffer_update(i, *declare);
                 }
             }
 
-            for (len, declare) in self.buffer_lengths.iter_mut().zip(self.buffer_declare.iter_mut()) {
+            for (len, declare) in self.buffer_lengths.iter_mut().zip(self.buffer_declare.iter_mut())
+            {
                 *len = *declare;
             }
 
@@ -647,7 +650,7 @@ pub struct DSPFunction {
     persistent_vars: Vec<f64>,
     /// Buffer updates for the buffers in [DSPState], these are determined and set
     /// in [DSPNodeContext::finalize_dsp_function].
-    buffer_updates: Vec<(usize, Vec<f64>)>,
+    buffer_updates: Option<Vec<(usize, Vec<f64>)>>,
     /// This is just a flag as precaution, in case init() is accidentally called
     /// multiple times.
     buffer_updates_done: bool,
@@ -697,7 +700,7 @@ impl DSPFunction {
             dsp_ctx_generation,
             module: None,
             resetted: false,
-            buffer_updates: vec![],
+            buffer_updates: Some(vec![]),
             buffer_updates_done: true,
         }
     }
@@ -736,7 +739,9 @@ impl DSPFunction {
     /// according to [crate::ast::ASTNode::BufDeclare]. Buffers are only updated
     /// if they get a new length though.
     pub(crate) fn add_buffer_update(&mut self, buf_idx: usize, length: usize) {
-        self.buffer_updates.push((buf_idx, vec![0.0; length]));
+        if let Some(updates) = &mut self.buffer_updates {
+            updates.push((buf_idx, vec![0.0; length]));
+        }
         self.buffer_updates_done = false;
     }
 
@@ -757,14 +762,11 @@ impl DSPFunction {
         }
 
         if !self.buffer_updates_done {
-            for (idx, new_vec) in self.buffer_updates.iter_mut() {
-                unsafe {
-                    let old_len = (*self.state).buffers.element_len(*idx);
-                    let old_vec = (*self.state).buffers.pointers()[*idx];
-                    let min_len = old_len.min(new_vec.len());
-                    std::ptr::copy_nonoverlapping(old_vec, new_vec.as_mut_ptr(), min_len);
-                    let _ = (*self.state).buffers.swap_element(*idx, new_vec);
+            if let Some(mut updates) = self.buffer_updates.take() {
+                for (idx, new_vec) in updates.iter_mut() {
+                    let _ = self.swap_buffer(*idx, new_vec, true);
                 }
+                self.buffer_updates = Some(updates);
             }
             self.buffer_updates_done = true;
         }
@@ -781,6 +783,46 @@ impl DSPFunction {
             let ptr = self.node_states[*idx as usize];
             typ.reset_state(self.state, ptr);
         }
+    }
+
+    /// Swaps out the buffer at the given index with the new buffer. The contents
+    /// of the Vec will be swapped with the current contents of the buffer, unless
+    /// you specify `preserve_old_samples` which will try to preserve as many samples
+    /// from the previous buffer as possible.
+    pub fn swap_buffer(
+        &mut self,
+        index: usize,
+        new_buf: &mut Vec<f64>,
+        preserve_old_samples: bool,
+    ) -> Result<(), ()> {
+        unsafe {
+            if index >= (*self.state).buffers.len() {
+                return Err(());
+            }
+            if preserve_old_samples {
+                let old_len = (*self.state).buffers.element_len(index);
+                let old_vec = (*self.state).buffers.pointers()[index];
+                let min_len = old_len.min(new_buf.len());
+                std::ptr::copy_nonoverlapping(old_vec, new_buf.as_mut_ptr(), min_len);
+            }
+            let _ = (*self.state).buffers.swap_element(index, new_buf);
+        }
+        Ok(())
+    }
+
+    /// Swaps out the table at the given index with the new table.
+    pub fn swap_table(
+        &mut self,
+        index: usize,
+        new_table: &mut Arc<Vec<f32>>,
+    ) -> Result<(), ()> {
+        unsafe {
+            if index >= (*self.state).tables.len() {
+                return Err(());
+            }
+            let _ = (*self.state).tables.swap_element(index, new_table);
+        }
+        Ok(())
     }
 
     /// If the audio thread changes the sampling rate, call this function, it will update

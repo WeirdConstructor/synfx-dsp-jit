@@ -26,11 +26,15 @@ const MAX_RINGBUF_SIZE: usize = 128;
 
 enum CodeUpdateMsg {
     UpdateFun(Box<DSPFunction>),
+    UpdateBuffer(usize, Vec<f64>),
+    UpdateTable(usize, Arc<Vec<f32>>),
     ResetFun,
 }
 
 enum CodeReturnMsg {
     DestroyFun(Box<DSPFunction>),
+    DestroyBuffer(Vec<f64>),
+    DestroyTableRef(Arc<Vec<f32>>),
 }
 
 /// This is the frontend handle for the DSP code execution engine.
@@ -173,9 +177,11 @@ impl CodeEngine {
     }
 
     pub fn send_buffer(&mut self, index: usize, buf: Vec<f64>) {
+        let _ = self.update_prod.push(CodeUpdateMsg::UpdateBuffer(index, buf));
     }
 
-    pub fn send_table(&mut self, index: usize, buf: Arc<Vec<f64>>) {
+    pub fn send_table(&mut self, index: usize, buf: Arc<Vec<f32>>) {
+        let _ = self.update_prod.push(CodeUpdateMsg::UpdateTable(index, buf));
     }
 
     /// Emits a message to the backend to cause a reset of the DSPFunction.
@@ -194,6 +200,12 @@ impl CodeEngine {
             match msg {
                 CodeReturnMsg::DestroyFun(fun) => {
                     self.cleanup(fun);
+                }
+                CodeReturnMsg::DestroyBuffer(_buf) => {
+                    // drop that buffer...
+                }
+                CodeReturnMsg::DestroyTableRef(_buf) => {
+                    // drop that buffer...
                 }
             }
         }
@@ -301,8 +313,15 @@ impl CodeEngineBackend {
                     self.function.init(self.sample_rate as f64, Some(&fun));
                     let _ = self.return_prod.push(CodeReturnMsg::DestroyFun(fun));
                 }
+                CodeUpdateMsg::UpdateBuffer(index, mut buf) => {
+                    let _ = self.function.swap_buffer(index, &mut buf, false);
+                    let _ = self.return_prod.push(CodeReturnMsg::DestroyBuffer(buf));
+                }
+                CodeUpdateMsg::UpdateTable(index, mut buf) => {
+                    let _ = self.function.swap_table(index, &mut buf);
+                    let _ = self.return_prod.push(CodeReturnMsg::DestroyTableRef(buf));
+                }
                 CodeUpdateMsg::ResetFun => {
-            println!("UPRESET");
                     self.function.reset();
                 },
             }
@@ -380,15 +399,15 @@ mod test {
         let (s1, s2, ret) = backend.process(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         assert_eq!(s1, 0.0);
         assert_eq!(s2, 0.0);
-        assert_eq!(ret.round() as i32, 32);
+        assert_eq!(ret.round() as i32, 17);
 
         engine.send_buffer(4, vec![0.4532; 10]);
         engine.send_table(3, std::sync::Arc::new(vec![0.5532; 23]));
         backend.process_updates();
 
         let (s1, s2, ret) = backend.process(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
-        assert_eq!(s1, 0.45);
-        assert_eq!(s2, 0.55);
+        assert_eq!(s1, 0.4532);
+        assert_eq!(s2, 0.5532);
         assert_eq!(ret.round() as i32, 33);
     }
 }
