@@ -45,7 +45,7 @@ pub struct DSPContextConfig {
 impl Default for DSPContextConfig {
     fn default() -> Self {
         Self {
-            atom_count: 512,
+            atom_count: 32,
             buffer_count: 16,
             tables: vec![Arc::new(vec![0.0; 16])],
         }
