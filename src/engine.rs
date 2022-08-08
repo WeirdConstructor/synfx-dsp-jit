@@ -172,6 +172,12 @@ impl CodeEngine {
         Ok(())
     }
 
+    pub fn send_buffer(&mut self, index: usize, buf: Vec<f64>) {
+    }
+
+    pub fn send_table(&mut self, index: usize, buf: Arc<Vec<f64>>) {
+    }
+
     /// Emits a message to the backend to cause a reset of the DSPFunction.
     /// All non persistent state is resetted in this case.
     pub fn reset(&mut self) {
@@ -327,5 +333,62 @@ mod test {
         backend.process_updates();
         let (_s1, _s2, ret) = backend.process(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         assert_eq!(ret.round() as i32, 1);
+    }
+
+    #[test]
+    fn check_engine_buffer_size_change() {
+        use crate::build::*;
+
+        let mut engine = CodeEngine::new_stdlib();
+        let mut backend = engine.get_backend();
+
+        backend.set_sample_rate(44100.0);
+
+        engine.upload(op_add(buf_len(0), buf_len(1))).unwrap();
+
+        backend.process_updates();
+        let (_s1, _s2, ret) = backend.process(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        assert_eq!(ret.round() as i32, 32);
+
+        engine.upload(stmts(&[buf_declare(0, 1), buf_declare(1, 256)])).unwrap();
+        backend.process_updates();
+
+        engine.upload(op_add(buf_len(0), buf_len(1))).unwrap();
+        backend.process_updates();
+        let (_s1, _s2, ret) = backend.process(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        assert_eq!(ret.round() as i32, 257);
+    }
+
+    #[test]
+    fn check_engine_buffer_table_sending() {
+        use crate::build::*;
+
+        let mut engine = CodeEngine::new_stdlib();
+        let mut backend = engine.get_backend();
+
+        backend.set_sample_rate(44100.0);
+
+        engine.upload(
+            stmts(&[
+                assign("&sig1", buf_read(4, literal(5.0))),
+                assign("&sig2", table_read(3, literal(5.0))),
+                op_add(buf_len(4), table_len(3)),
+            ])
+        ).unwrap();
+
+        backend.process_updates();
+        let (s1, s2, ret) = backend.process(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        assert_eq!(s1, 0.0);
+        assert_eq!(s2, 0.0);
+        assert_eq!(ret.round() as i32, 32);
+
+        engine.send_buffer(4, vec![0.4532; 10]);
+        engine.send_table(3, std::sync::Arc::new(vec![0.5532; 23]));
+        backend.process_updates();
+
+        let (s1, s2, ret) = backend.process(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        assert_eq!(s1, 0.45);
+        assert_eq!(s2, 0.55);
+        assert_eq!(ret.round() as i32, 33);
     }
 }
