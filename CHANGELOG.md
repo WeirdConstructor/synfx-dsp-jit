@@ -12,6 +12,7 @@ that shows how to control a DSPFunction with atoms.
 * Feature: Added `$reset` which is true directly after an (explicit) reset and the first initialization.
 * Feature: Added `s&h` and `s&h~` sample and hold nodes.
 * Feature: Added buffers with AST operations for writing and reading the buffer contents.
+Aswell as an AST operation for declaring the buffer size.
 
 0.5.3 (2022-08-05)
 ==================

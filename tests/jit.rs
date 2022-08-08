@@ -868,9 +868,9 @@ fn check_node_buffers() {
             let mut new_buf = vec![0.0; (*state).buffers.element_len(0) * 2];
             new_buf[0] = 0.55;
             new_buf[1] = 0.85;
-            let old = (*state).buffers.swap_element(0, new_buf).unwrap();
-            assert_float_eq!(old[0], 0.23);
-            assert_float_eq!(old[1], 0.46);
+            (*state).buffers.swap_element(0, &mut new_buf).unwrap();
+            assert_float_eq!(new_buf[0], 0.23);
+            assert_float_eq!(new_buf[1], 0.46);
         })
     }
 
@@ -922,7 +922,7 @@ fn check_node_bufdeclare() {
     let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
     assert_float_eq!(s1, 0.23);
     assert_float_eq!(s2, 0.46);
-    assert_float_eq!(ret, 16.0);
+    assert_float_eq!(ret, 33.0);
 
     let old_code = code;
     let jit = JIT::new(lib.clone(), dsp_ctx.clone());
@@ -937,9 +937,10 @@ fn check_node_bufdeclare() {
 
     code.init(44100.0, Some(&old_code));
     let (s1, s2, ret) = code.exec_2in_2out(0.0, 0.0);
-    assert_float_eq!(s1, 0.775);
-    assert_float_eq!(s2, 0.58);
-    assert_float_eq!(ret, 0.7);
+    // Check that the values were preseved!
+    assert_float_eq!(s1, 0.23);
+    assert_float_eq!(s2, 0.46);
+    assert_float_eq!(ret, 45.0);
 
     dsp_ctx.borrow_mut().free();
 }
@@ -960,12 +961,12 @@ fn check_node_tables() {
         ]))));
 
     unsafe {
-        // Modify and check via the DSPState structure:
         code.with_dsp_state(|state| {
             let mut new_buf = vec![0.0; 8];
             new_buf[0] = 0.55;
             new_buf[1] = 0.85;
-            let old = (*state).tables.swap_element(0, std::sync::Arc::new(new_buf)).unwrap();
+            let mut new_buf = std::sync::Arc::new(new_buf);
+            (*state).tables.swap_element(0, &mut new_buf).unwrap();
         })
     }
 
@@ -976,10 +977,10 @@ fn check_node_tables() {
     assert_float_eq!(ret, 8.775);
 
     unsafe {
-        // Modify and check via the DSPState structure:
         code.with_dsp_state(|state| {
-            let mut new_buf = vec![0.33; 1];
-            let old = (*state).tables.swap_element(0, std::sync::Arc::new(new_buf)).unwrap();
+            let new_buf = vec![0.33; 1];
+            let mut new_buf = std::sync::Arc::new(new_buf);
+            (*state).tables.swap_element(0, &mut new_buf).unwrap();
         })
     }
 

@@ -79,6 +79,13 @@ pub struct DSPNodeContext {
     /// These AtomicFloats will be shared via the [DSPState] structure and read/written using
     /// the `atomw` and `atomr` nodes.
     atoms: Vec<Arc<AtomicFloat>>,
+    /// Holds the current buffer lengths, they are updated
+    /// in [DSPNodeContext::finalize_dsp_function].
+    buffer_lengths: Vec<usize>,
+    /// Holds the most recently declared buffer lengths, these are used to determine
+    /// if we need to send a buffer update with the [DSPFunction]
+    /// in [DSPNodeContext::finalize_dsp_function].
+    pub(crate) buffer_declare: Vec<usize>,
 }
 
 impl DSPNodeContext {
@@ -91,11 +98,14 @@ impl DSPNodeContext {
         atoms.resize_with(config.atom_count, || Arc::new(AtomicFloat::new(0.0)));
         let atoms_state = atoms.clone();
 
+        let mut buffer_lengths = vec![];
         let mut buffers = vec![];
         for _ in 0..config.buffer_count {
             buffers.push(vec![0.0; BUFFER_DEFAULT_SIZE]);
+            buffer_lengths.push(BUFFER_DEFAULT_SIZE);
         }
         let buffers = LockedMutPtrs::new(buffers);
+        let buffer_declare = buffer_lengths.clone();
 
         let tables = LockedPtrs::new(config.tables.clone());
 
@@ -118,6 +128,8 @@ impl DSPNodeContext {
             debug_enabled: false,
             cranelift_ir_dump: String::from(""),
             atoms,
+            buffer_lengths,
+            buffer_declare,
         }
     }
 
@@ -249,6 +261,16 @@ impl DSPNodeContext {
         module: JITModule,
     ) -> Option<Box<DSPFunction>> {
         if let Some(mut next_dsp_fun) = self.next_dsp_fun.take() {
+            for (i, (len, declare)) in self.buffer_lengths.iter().zip(self.buffer_declare.iter()).enumerate() {
+                if *len != *declare {
+                    next_dsp_fun.add_buffer_update(i, *declare);
+                }
+            }
+
+            for (len, declare) in self.buffer_lengths.iter_mut().zip(self.buffer_declare.iter_mut()) {
+                *len = *declare;
+            }
+
             next_dsp_fun.set_function_ptr(function_ptr, module);
 
             for (_, node_state) in self.node_states.iter_mut() {
@@ -623,6 +645,12 @@ pub struct DSPFunction {
     module: Option<JITModule>,
     /// Storage of persistent variables:
     persistent_vars: Vec<f64>,
+    /// Buffer updates for the buffers in [DSPState], these are determined and set
+    /// in [DSPNodeContext::finalize_dsp_function].
+    buffer_updates: Vec<(usize, Vec<f64>)>,
+    /// This is just a flag as precaution, in case init() is accidentally called
+    /// multiple times.
+    buffer_updates_done: bool,
     /// Auxilary variables to access directly from the machine code. Holds information such as
     /// the sample rate or the inverse of the sample rate.
     aux_vars: [f64; AUX_VAR_COUNT],
@@ -669,6 +697,8 @@ impl DSPFunction {
             dsp_ctx_generation,
             module: None,
             resetted: false,
+            buffer_updates: vec![],
+            buffer_updates_done: true,
         }
     }
 
@@ -702,6 +732,14 @@ impl DSPFunction {
         });
     }
 
+    /// Appends a buffer update to this [DSPFunction], to update the buffers
+    /// according to [crate::ast::ASTNode::BufDeclare]. Buffers are only updated
+    /// if they get a new length though.
+    pub(crate) fn add_buffer_update(&mut self, buf_idx: usize, length: usize) {
+        self.buffer_updates.push((buf_idx, vec![0.0; length]));
+        self.buffer_updates_done = false;
+    }
+
     /// This function must be called before [DSPFunction::exec]!
     /// otherwise your states might not be properly initialized or preserved.
     ///
@@ -716,6 +754,19 @@ impl DSPFunction {
             self.persistent_vars[0..len].copy_from_slice(&previous_function.persistent_vars[0..len])
         } else {
             self.resetted = true;
+        }
+
+        if !self.buffer_updates_done {
+            for (idx, new_vec) in self.buffer_updates.iter_mut() {
+                unsafe {
+                    let old_len = (*self.state).buffers.element_len(*idx);
+                    let old_vec = (*self.state).buffers.pointers()[*idx];
+                    let min_len = old_len.min(new_vec.len());
+                    std::ptr::copy_nonoverlapping(old_vec, new_vec.as_mut_ptr(), min_len);
+                    let _ = (*self.state).buffers.swap_element(*idx, new_vec);
+                }
+            }
+            self.buffer_updates_done = true;
         }
 
         unsafe {

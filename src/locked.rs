@@ -112,18 +112,18 @@ where
     ///
     /// You must not call this function while you still have pointers handed out.
     /// These pointers will be invaldiated by this function!
-    pub unsafe fn swap_element(&mut self, idx: usize, elem: T) -> Result<T, T> {
+    pub unsafe fn swap_element(&mut self, idx: usize, elem: &mut T) -> Result<(), ()> {
         if idx >= self.pointers.len() {
-            Err(elem)
+            Err(())
         } else {
             if elem.len() == 0 {
-                return Err(elem);
+                return Err(());
             }
 
-            let ret = std::mem::replace(&mut self.data[idx], elem);
+            std::mem::swap(&mut self.data[idx], elem);
             self.pointers[idx] = self.data[idx].as_mut_ptr();
             self.lens[idx] = self.data[idx].len() as u64;
-            Ok(ret)
+            Ok(())
         }
     }
 
@@ -214,18 +214,18 @@ where
     ///
     /// You must not call this function while you still have pointers handed out.
     /// These pointers will be invaldiated by this function!
-    pub unsafe fn swap_element(&mut self, idx: usize, elem: T) -> Result<T, T> {
+    pub unsafe fn swap_element(&mut self, idx: usize, elem: &mut T) -> Result<(), ()> {
         if idx >= self.pointers.len() {
-            Err(elem)
+            Err(())
         } else {
             if elem.len() == 0 {
-                return Err(elem);
+                return Err(());
             }
 
-            let ret = std::mem::replace(&mut self.data[idx], elem);
+            std::mem::swap(&mut self.data[idx], elem);
             self.pointers[idx] = self.data[idx].as_ptr();
             self.lens[idx] = self.data[idx].len() as u64;
-            Ok(ret)
+            Ok(())
         }
     }
 

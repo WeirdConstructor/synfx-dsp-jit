@@ -560,15 +560,9 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                     return Err(JITCompileError::UnknownBuffer(*buf_idx));
                 }
 
+                self.dsp_ctx.buffer_declare[*buf_idx] = *len;
+
                 Ok(self.builder.ins().f64const(0.0))
-                // Check if the len given here differs from the len recorded in DSPNodeContext
-                // TODO: Make an extra field for buffer lengths in DSPNodeContext
-                // If len differs, push a "buffer_alloc_task" with a length to DSPNodeContext
-                // When finalizing the function, take the tasks and copy them into the function.
-                // In the backend, when calling DSPFunction::init, replace the buffers
-                // from the tasks with those in the new function. Copy over the old data to the
-                // new buffer. The old buffer is stored in the DSPFunction for disposal on the next
-                // roundtrip.
             },
             ASTNode::Len(op) => {
                 let (buf_idx, buf_lens) = match op {
