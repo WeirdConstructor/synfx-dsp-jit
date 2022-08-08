@@ -158,13 +158,13 @@ impl Default for PhaseNodeState {
 
 extern "C" fn process_phase(freq: f64, reset: f64, state: *mut PhaseNodeState) -> f64 {
     let mut state = unsafe { &mut *state };
-    state.value += freq * state.israte;
     if state.trig.check_trigger(reset as f32) {
         state.value = 0.0;
-    } else {
-        state.value = state.value.fract();
     }
-    state.value
+    let value = state.value;
+    state.value += freq * state.israte;
+    state.value = state.value.fract();
+    value
 }
 
 stateful_dsp_node_type! {

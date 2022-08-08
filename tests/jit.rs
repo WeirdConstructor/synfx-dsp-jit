@@ -540,9 +540,9 @@ fn check_stdlib_phase() {
         code.exec_2in_2out(0.0, 0.0);
     }
     let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
-    assert_float_eq!(s1, 0.2721);
+    assert_float_eq!(s1, 0.2494);
 
-    for _ in 0..10 {
+    for _ in 0..11 {
         code.exec_2in_2out(0.0, 0.0);
     }
     let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
@@ -556,7 +556,7 @@ fn check_stdlib_phase() {
 
     code.reset();
 
-    for _ in 0..11 {
+    for _ in 0..12 {
         code.exec_2in_2out(0.0, 0.0);
     }
     let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
@@ -576,6 +576,17 @@ fn check_stdlib_phase() {
     assert_float_eq!(s1, 0.02267);
     let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
     assert_float_eq!(s1, 0.02267 * 2.0);
+
+    let mut max = -999.0_f64;
+    let mut min = 999.0_f64;
+    code.reset();
+    for _ in 0..1100 {
+        let (s1, _, _) = code.exec_2in_2out(0.0, 0.0);
+        max = max.max(s1);
+        min = min.min(s1);
+    }
+    assert_float_eq!(max, 1.0);
+    assert_float_eq!(min, 0.0);
 
     dsp_ctx.borrow_mut().free();
 }
