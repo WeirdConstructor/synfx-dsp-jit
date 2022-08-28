@@ -1,4 +1,4 @@
-0.6.0 (unreleased)
+0.6.0 (2022-08-28)
 ==================
 
 * Documentation: Added in [crate::stdlib] a rough documentation of the available variables and nodes.
