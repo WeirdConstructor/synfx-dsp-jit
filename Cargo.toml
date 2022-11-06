@@ -1,6 +1,6 @@
 [package]
 name = "synfx-dsp-jit"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 authors = ["Weird Constructor <weirdconstructor@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -18,8 +18,8 @@ cranelift-codegen = "0.86.1"
 cranelift-native = "0.86.1"
 ringbuf = "0.2.8"
 anyhow = "1.0.58"
-#synfx-dsp = { version = "0.5.4" }
-synfx-dsp = { git = "https://github.com/WeirdConstructor/synfx-dsp.git" }
+synfx-dsp = { version = "0.5.5" }
+#synfx-dsp = { git = "https://github.com/WeirdConstructor/synfx-dsp.git" }
 
 [dev-dependencies]
 cpal = "0.13.5"
