@@ -1,3 +1,9 @@
+0.6.2 (2024-01-04)
+==================
+
+* Bump `synfx-dsp` dependency version to 0.5.6 (fixing a SIMD error).
+* Change: Bumped cranelift version to 0.103 and updated the code accordingly.
+
 0.6.1 (2022-11-06)
 ==================
 

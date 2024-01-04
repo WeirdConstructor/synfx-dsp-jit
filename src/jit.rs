@@ -11,6 +11,7 @@ use cranelift::prelude::types::{F64, F32, I32, I64};
 use cranelift::prelude::InstBuilder;
 use cranelift::prelude::*;
 use cranelift_codegen::ir::immediates::Offset32;
+use cranelift_codegen::ir::UserFuncName;
 use cranelift_codegen::settings::{self, Configurable};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::default_libcall_names;
@@ -149,7 +150,7 @@ impl JIT {
             .declare_function("dsp", Linkage::Export, &self.ctx.func.signature)
             .map_err(|e| JITCompileError::DeclareTopFunError(e.to_string()))?;
 
-        self.ctx.func.name = ExternalName::user(0, id.as_u32());
+        self.ctx.func.name = UserFuncName::user(0, id.as_u32());
 
         // Then, translate the AST nodes into Cranelift IR.
         self.translate(prog)?;
@@ -170,7 +171,13 @@ impl JIT {
         })?;
 
         module.clear_context(&mut self.ctx);
-        module.finalize_definitions();
+        match module.finalize_definitions() {
+            Ok(()) => (),
+            Err(e) => {
+                return Err(JITCompileError::ModuleError(
+                    format!("{}", e)));
+            }
+        }
 
         let code = module.get_finalized_function(id);
 
@@ -193,16 +200,12 @@ impl JIT {
         let mut dsp_ctx = dsp_ctx.borrow_mut();
 
         let debug = dsp_ctx.debug_enabled();
-        let mut debug_str = None;
 
-        {
+        let debug_str = {
             let mut trans = DSPFunctionTranslator::new(&mut *dsp_ctx, &*dsp_lib, builder, module);
             trans.register_functions()?;
-            trans.translate(fun)?;
-            if debug {
-                debug_str = Some(format!("{}", trans.builder.func.display()));
-            }
-        }
+            trans.translate(fun, debug)?
+        };
 
         if let Some(debug_str) = debug_str {
             dsp_ctx.cranelift_ir_dump = debug_str;
@@ -237,7 +240,7 @@ fn constant_lookup(name: &str) -> Option<f64> {
 pub(crate) struct DSPFunctionTranslator<'a, 'b, 'c> {
     dsp_ctx: &'c mut DSPNodeContext,
     dsp_lib: &'b DSPNodeTypeLibrary,
-    builder: FunctionBuilder<'a>,
+    builder: Option<FunctionBuilder<'a>>,
     variables: HashMap<String, Variable>,
     var_index: usize,
     module: &'a mut JITModule,
@@ -259,7 +262,14 @@ pub enum JITCompileError {
     UnknownBuffer(usize),
     NoValueBufferWrite(usize),
     NotEnoughArgsInCall(String, u64),
+    ModuleError(String),
     NodeStateError(String, u64),
+}
+
+macro_rules! b {
+    ($self: ident) => {
+        $self.builder.as_mut().expect("FunctionBuilder not finalized")
+    }
 }
 
 impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
@@ -270,6 +280,8 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
         module: &'a mut JITModule,
     ) -> Self {
         dsp_ctx.init_dsp_function();
+
+        let builder = Some(builder);
 
         Self {
             dsp_ctx,
@@ -330,27 +342,27 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
 
         if !self.variables.contains_key(name) {
             self.variables.insert(name.into(), var);
-            self.builder.declare_var(var, typ);
+            b!(self).declare_var(var, typ);
             self.var_index += 1;
         }
 
         var
     }
 
-    fn translate(&mut self, fun: ASTFun) -> Result<(), JITCompileError> {
+    fn translate(&mut self, fun: ASTFun, debug: bool) -> Result<Option<String>, JITCompileError> {
         let ptr_type = self.module.target_config().pointer_type();
         self.ptr_w = ptr_type.bytes();
 
-        let entry_block = self.builder.create_block();
-        self.builder.append_block_params_for_function_params(entry_block);
-        self.builder.switch_to_block(entry_block);
-        self.builder.seal_block(entry_block);
+        let entry_block = b!(self).create_block();
+        b!(self).append_block_params_for_function_params(entry_block);
+        b!(self).switch_to_block(entry_block);
+        b!(self).seal_block(entry_block);
 
         self.variables.clear();
 
         // declare and define parameters:
         for param_idx in 0..fun.param_count() {
-            let val = self.builder.block_params(entry_block)[param_idx];
+            let val = b!(self).block_params(entry_block)[param_idx];
 
             match fun.param_name(param_idx) {
                 Some(param_name) => {
@@ -360,7 +372,7 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         self.declare_variable(F64, param_name)
                     };
 
-                    self.builder.def_var(var, val);
+                    b!(self).def_var(var, val);
                 }
                 None => {
                     return Err(JITCompileError::BadDefinedParams);
@@ -370,51 +382,58 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
 
         // declare and define local variables:
         for local_name in fun.local_variables().iter() {
-            let zero = self.builder.ins().f64const(0.0);
+            let zero = b!(self).ins().f64const(0.0);
             let var = self.declare_variable(F64, local_name);
-            self.builder.def_var(var, zero);
+            b!(self).def_var(var, zero);
         }
 
         let v = self.compile(fun.ast_ref())?;
 
-        self.builder.ins().return_(&[v]);
-        self.builder.finalize();
+        b!(self).ins().return_(&[v]);
 
-        Ok(())
+        let result = if debug {
+            Some(format!("{}", b!(self).func.display()))
+        } else {
+            None
+        };
+
+        self.builder.take().expect("builder not finalized yet").finalize();
+
+        Ok(result)
     }
 
     fn ins_b_to_f64(&mut self, v: Value) -> Value {
-        let bint = self.builder.ins().bint(I32, v);
-        self.builder.ins().fcvt_from_uint(F64, bint)
+//        let bint = self.b!(self).ins().bint(I32, v);
+        b!(self).ins().fcvt_from_uint(F64, v)
     }
 
     fn compile(&mut self, ast: &ASTNode) -> Result<Value, JITCompileError> {
         match ast {
-            ASTNode::Lit(v) => Ok(self.builder.ins().f64const(*v)),
+            ASTNode::Lit(v) => Ok(b!(self).ins().f64const(*v)),
             ASTNode::Var(name) => {
                 if let Some(c) = constant_lookup(name) {
-                    Ok(self.builder.ins().f64const(c))
+                    Ok(b!(self).ins().f64const(c))
                 } else if name.starts_with('&') {
                     let variable = self
                         .variables
                         .get(name)
                         .ok_or_else(|| JITCompileError::UndefinedVariable(name.to_string()))?;
-                    let ptr = self.builder.use_var(*variable);
-                    Ok(self.builder.ins().load(F64, MemFlags::new(), ptr, 0))
+                    let ptr = b!(self).use_var(*variable);
+                    Ok(b!(self).ins().load(F64, MemFlags::new(), ptr, 0))
                 } else if name.starts_with('$') {
                     let aux_vars = self
                         .variables
                         .get("&aux")
                         .ok_or_else(|| JITCompileError::UndefinedVariable("&aux".to_string()))?;
 
-                    let pvs = self.builder.use_var(*aux_vars);
+                    let pvs = b!(self).use_var(*aux_vars);
                     let offs = match &name[..] {
                         "$srate" => AUX_VAR_IDX_SRATE,
                         "$israte" => AUX_VAR_IDX_ISRATE,
                         "$reset" => AUX_VAR_IDX_RESET,
                         _ => return Err(JITCompileError::UndefinedVariable(name.to_string())),
                     };
-                    let aux_value = self.builder.ins().load(
+                    let aux_value = b!(self).ins().load(
                         F64,
                         MemFlags::new(),
                         pvs,
@@ -431,8 +450,8 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         .variables
                         .get("&pv")
                         .ok_or_else(|| JITCompileError::UndefinedVariable("&pv".to_string()))?;
-                    let pvs = self.builder.use_var(*persistent_vars);
-                    let pers_value = self.builder.ins().load(
+                    let pvs = b!(self).use_var(*persistent_vars);
+                    let pers_value = b!(self).ins().load(
                         F64,
                         MemFlags::new(),
                         pvs,
@@ -461,8 +480,8 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         .variables
                         .get("&rv")
                         .ok_or_else(|| JITCompileError::UndefinedVariable("&rv".to_string()))?;
-                    let rvs = self.builder.use_var(*return_vals);
-                    let ret_value = self.builder.ins().load(
+                    let rvs = b!(self).use_var(*return_vals);
+                    let ret_value = b!(self).ins().load(
                         F64,
                         MemFlags::new(),
                         rvs,
@@ -474,7 +493,7 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         .variables
                         .get(name)
                         .ok_or_else(|| JITCompileError::UndefinedVariable(name.to_string()))?;
-                    Ok(self.builder.use_var(*variable))
+                    Ok(b!(self).use_var(*variable))
                 }
             }
             ASTNode::Assign(name, ast) => {
@@ -485,8 +504,8 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         .variables
                         .get(name)
                         .ok_or_else(|| JITCompileError::UndefinedVariable(name.to_string()))?;
-                    let ptr = self.builder.use_var(*variable);
-                    self.builder.ins().store(MemFlags::new(), value, ptr, 0);
+                    let ptr = b!(self).use_var(*variable);
+                    b!(self).ins().store(MemFlags::new(), value, ptr, 0);
                 } else if name.starts_with('*') {
                     let pv_index = self
                         .dsp_ctx
@@ -497,8 +516,8 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         .variables
                         .get("&pv")
                         .ok_or_else(|| JITCompileError::UndefinedVariable("&pv".to_string()))?;
-                    let pvs = self.builder.use_var(*persistent_vars);
-                    self.builder.ins().store(
+                    let pvs = b!(self).use_var(*persistent_vars);
+                    b!(self).ins().store(
                         MemFlags::new(),
                         value,
                         pvs,
@@ -509,7 +528,7 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         .variables
                         .get(name)
                         .ok_or_else(|| JITCompileError::UndefinedVariable(name.to_string()))?;
-                    self.builder.def_var(*variable, value);
+                    b!(self).def_var(*variable, value);
                 }
 
                 Ok(value)
@@ -518,37 +537,37 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                 let value_a = self.compile(a)?;
                 let value_b = self.compile(b)?;
                 let value = match op {
-                    ASTBinOp::Add => self.builder.ins().fadd(value_a, value_b),
-                    ASTBinOp::Sub => self.builder.ins().fsub(value_a, value_b),
-                    ASTBinOp::Mul => self.builder.ins().fmul(value_a, value_b),
-                    ASTBinOp::Div => self.builder.ins().fdiv(value_a, value_b),
+                    ASTBinOp::Add => b!(self).ins().fadd(value_a, value_b),
+                    ASTBinOp::Sub => b!(self).ins().fsub(value_a, value_b),
+                    ASTBinOp::Mul => b!(self).ins().fmul(value_a, value_b),
+                    ASTBinOp::Div => b!(self).ins().fdiv(value_a, value_b),
                     ASTBinOp::Eq => {
-                        let cmp_res = self.builder.ins().fcmp(FloatCC::Equal, value_a, value_b);
+                        let cmp_res = b!(self).ins().fcmp(FloatCC::Equal, value_a, value_b);
                         self.ins_b_to_f64(cmp_res)
                     }
                     ASTBinOp::Ne => {
-                        let cmp_res = self.builder.ins().fcmp(FloatCC::Equal, value_a, value_b);
-                        let bnot = self.builder.ins().bnot(cmp_res);
-                        let bint = self.builder.ins().bint(I32, bnot);
-                        self.builder.ins().fcvt_from_uint(F64, bint)
+                        let cmp_res = b!(self).ins().fcmp(FloatCC::Equal, value_a, value_b);
+                        let bnot = b!(self).ins().bnot(cmp_res);
+//                        let bint = b!(self).ins().bint(I32, bnot);
+                        b!(self).ins().fcvt_from_uint(F64, bnot)
                     }
                     ASTBinOp::Ge => {
                         let cmp_res =
-                            self.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, value_a, value_b);
+                            b!(self).ins().fcmp(FloatCC::GreaterThanOrEqual, value_a, value_b);
                         self.ins_b_to_f64(cmp_res)
                     }
                     ASTBinOp::Le => {
                         let cmp_res =
-                            self.builder.ins().fcmp(FloatCC::LessThanOrEqual, value_a, value_b);
+                            b!(self).ins().fcmp(FloatCC::LessThanOrEqual, value_a, value_b);
                         self.ins_b_to_f64(cmp_res)
                     }
                     ASTBinOp::Gt => {
                         let cmp_res =
-                            self.builder.ins().fcmp(FloatCC::GreaterThan, value_a, value_b);
+                            b!(self).ins().fcmp(FloatCC::GreaterThan, value_a, value_b);
                         self.ins_b_to_f64(cmp_res)
                     }
                     ASTBinOp::Lt => {
-                        let cmp_res = self.builder.ins().fcmp(FloatCC::LessThan, value_a, value_b);
+                        let cmp_res = b!(self).ins().fcmp(FloatCC::LessThan, value_a, value_b);
                         self.ins_b_to_f64(cmp_res)
                     }
                 };
@@ -562,7 +581,7 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
 
                 self.dsp_ctx.buffer_declare[*buf_idx] = *len;
 
-                Ok(self.builder.ins().f64const(0.0))
+                Ok(b!(self).ins().f64const(0.0))
             },
             ASTNode::Len(op) => {
                 let (buf_idx, buf_lens) = match op {
@@ -590,15 +609,15 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                     },
                 };
 
-                let lenptr = self.builder.use_var(*buf_lens);
-                let len = self.builder.ins().load(
+                let lenptr = b!(self).use_var(*buf_lens);
+                let len = b!(self).ins().load(
                     I64,
                     MemFlags::new(),
                     lenptr,
                     Offset32::new(buf_idx as i32 * self.ptr_w as i32),
                 );
 
-                Ok(self.builder.ins().fcvt_from_uint(F64, len))
+                Ok(b!(self).ins().fcvt_from_uint(F64, len))
             },
             ASTNode::BufOp { op, idx, val } => {
                 let idx = self.compile(idx)?;
@@ -640,16 +659,16 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                     }
                 };
 
-                let bptr = self.builder.use_var(*buf_var);
-                let buffer = self.builder.ins().load(
+                let bptr = b!(self).use_var(*buf_var);
+                let buffer = b!(self).ins().load(
                     ptr_type,
                     MemFlags::new(),
                     bptr,
                     Offset32::new(*buf_idx as i32 * self.ptr_w as i32),
                 );
 
-                let lenptr = self.builder.use_var(*buf_lens);
-                let len = self.builder.ins().load(
+                let lenptr = b!(self).use_var(*buf_lens);
+                let len = b!(self).ins().load(
                     I64,
                     MemFlags::new(),
                     lenptr,
@@ -657,9 +676,9 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                 );
 
                 let orig_idx = idx;
-                let idx = self.builder.ins().floor(idx);
+                let idx = b!(self).ins().floor(idx);
                 let orig_fint_idx = idx;
-                let idx = self.builder.ins().fcvt_to_uint(I64, idx);
+                let idx = b!(self).ins().fcvt_to_uint(I64, idx);
                 let orig_int_idx = idx;
 
                 let data_width =
@@ -668,9 +687,9 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         _ => F64.bytes() as i64
                     };
 
-                let idx = self.builder.ins().urem(idx, len);
-                let idx = self.builder.ins().imul_imm(idx, data_width);
-                let ptr = self.builder.ins().iadd(buffer, idx);
+                let idx = b!(self).ins().urem(idx, len);
+                let idx = b!(self).ins().imul_imm(idx, data_width);
+                let ptr = b!(self).ins().iadd(buffer, idx);
 
                 match op {
                     ASTBufOp::Write { .. } => {
@@ -679,40 +698,40 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                             .ok_or_else(|| JITCompileError::NoValueBufferWrite(*buf_idx))?;
                         let val = self.compile(val)?;
 
-                        self.builder.ins().store(MemFlags::new(), val, ptr, 0);
-                        Ok(self.builder.ins().f64const(0.0))
+                        b!(self).ins().store(MemFlags::new(), val, ptr, 0);
+                        Ok(b!(self).ins().f64const(0.0))
                     }
                     ASTBufOp::Read { .. } => {
-                        Ok(self.builder.ins().load(F64, MemFlags::new(), ptr, 0))
+                        Ok(b!(self).ins().load(F64, MemFlags::new(), ptr, 0))
                     }
                     ASTBufOp::TableRead { .. } => {
-                        let sample = self.builder.ins().load(F32, MemFlags::new(), ptr, 0);
-                        Ok(self.builder.ins().fpromote(F64, sample))
+                        let sample = b!(self).ins().load(F32, MemFlags::new(), ptr, 0);
+                        Ok(b!(self).ins().fpromote(F64, sample))
                     }
                     ASTBufOp::ReadLin { .. } | ASTBufOp::TableReadLin { .. } => {
-                        let fract = self.builder.ins().fsub(orig_idx, orig_fint_idx);
-                        let idx = self.builder.ins().iadd_imm(orig_int_idx, 1 as i64);
-                        let idx = self.builder.ins().urem(idx, len);
-                        let idx = self.builder.ins().imul_imm(idx, data_width);
-                        let ptr2 = self.builder.ins().iadd(buffer, idx);
+                        let fract = b!(self).ins().fsub(orig_idx, orig_fint_idx);
+                        let idx = b!(self).ins().iadd_imm(orig_int_idx, 1 as i64);
+                        let idx = b!(self).ins().urem(idx, len);
+                        let idx = b!(self).ins().imul_imm(idx, data_width);
+                        let ptr2 = b!(self).ins().iadd(buffer, idx);
 
                         let (a, b) =
                             if data_width == (I32.bytes() as i64) {
-                                let a = self.builder.ins().load(F32, MemFlags::new(), ptr, 0);
-                                let b = self.builder.ins().load(F32, MemFlags::new(), ptr2, 0);
-                                let a = self.builder.ins().fpromote(F64, a);
-                                let b = self.builder.ins().fpromote(F64, b);
+                                let a = b!(self).ins().load(F32, MemFlags::new(), ptr, 0);
+                                let b = b!(self).ins().load(F32, MemFlags::new(), ptr2, 0);
+                                let a = b!(self).ins().fpromote(F64, a);
+                                let b = b!(self).ins().fpromote(F64, b);
                                 (a, b)
                             } else {
-                                let a = self.builder.ins().load(F64, MemFlags::new(), ptr, 0);
-                                let b = self.builder.ins().load(F64, MemFlags::new(), ptr2, 0);
+                                let a = b!(self).ins().load(F64, MemFlags::new(), ptr, 0);
+                                let b = b!(self).ins().load(F64, MemFlags::new(), ptr2, 0);
                                 (a, b)
                             };
-                        let one = self.builder.ins().f64const(1.0);
-                        let fract_1 = self.builder.ins().fsub(one, fract);
-                        let a = self.builder.ins().fmul(a, fract_1);
-                        let b = self.builder.ins().fmul(b, fract);
-                        Ok(self.builder.ins().fadd(a, b))
+                        let one = b!(self).ins().f64const(1.0);
+                        let fract_1 = b!(self).ins().fsub(one, fract);
+                        let a = b!(self).ins().fmul(a, fract_1);
+                        let b = b!(self).ins().fmul(b, fract);
+                        Ok(b!(self).ins().fadd(a, b))
                     }
                 }
             }
@@ -746,7 +765,7 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                             let state_var = self.variables.get("&state").ok_or_else(|| {
                                 JITCompileError::UndefinedVariable("&state".to_string())
                             })?;
-                            dsp_node_fun_params.push(self.builder.use_var(*state_var));
+                            dsp_node_fun_params.push(b!(self).use_var(*state_var));
                         }
                         DSPNodeSigBit::NodeStatePtr => {
                             let node_state_index = match self
@@ -762,8 +781,8 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                             let fstate_var = self.variables.get("&fstate").ok_or_else(|| {
                                 JITCompileError::UndefinedVariable("&fstate".to_string())
                             })?;
-                            let fptr = self.builder.use_var(*fstate_var);
-                            let func_state = self.builder.ins().load(
+                            let fptr = b!(self).use_var(*fstate_var);
+                            let func_state = b!(self).ins().load(
                                 ptr_type,
                                 MemFlags::new(),
                                 fptr,
@@ -775,19 +794,19 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                             let ret_var = self.variables.get("&rv").ok_or_else(|| {
                                 JITCompileError::UndefinedVariable("&rv".to_string())
                             })?;
-                            dsp_node_fun_params.push(self.builder.use_var(*ret_var));
+                            dsp_node_fun_params.push(b!(self).use_var(*ret_var));
                         }
                     }
 
                     i += 1;
                 }
 
-                let local_callee = self.module.declare_func_in_func(func_id, self.builder.func);
-                let call = self.builder.ins().call(local_callee, &dsp_node_fun_params);
+                let local_callee = self.module.declare_func_in_func(func_id, b!(self).func);
+                let call = b!(self).ins().call(local_callee, &dsp_node_fun_params);
                 if node_type.has_return_value() {
-                    Ok(self.builder.inst_results(call)[0])
+                    Ok(b!(self).inst_results(call)[0])
                 } else {
-                    Ok(self.builder.ins().f64const(0.0))
+                    Ok(b!(self).ins().f64const(0.0))
                 }
             }
             ASTNode::If(cond, then, els) => {
@@ -796,33 +815,33 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                         ASTBinOp::Eq => {
                             let a = self.compile(a)?;
                             let b = self.compile(b)?;
-                            self.builder.ins().fcmp(FloatCC::Equal, a, b)
+                            b!(self).ins().fcmp(FloatCC::Equal, a, b)
                         }
                         ASTBinOp::Ne => {
                             let a = self.compile(a)?;
                             let b = self.compile(b)?;
-                            let eq = self.builder.ins().fcmp(FloatCC::Equal, a, b);
-                            self.builder.ins().bnot(eq)
+                            let eq = b!(self).ins().fcmp(FloatCC::Equal, a, b);
+                            b!(self).ins().bnot(eq)
                         }
                         ASTBinOp::Gt => {
                             let a = self.compile(a)?;
                             let b = self.compile(b)?;
-                            self.builder.ins().fcmp(FloatCC::GreaterThan, a, b)
+                            b!(self).ins().fcmp(FloatCC::GreaterThan, a, b)
                         }
                         ASTBinOp::Lt => {
                             let a = self.compile(a)?;
                             let b = self.compile(b)?;
-                            self.builder.ins().fcmp(FloatCC::LessThan, a, b)
+                            b!(self).ins().fcmp(FloatCC::LessThan, a, b)
                         }
                         ASTBinOp::Ge => {
                             let a = self.compile(a)?;
                             let b = self.compile(b)?;
-                            self.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, a, b)
+                            b!(self).ins().fcmp(FloatCC::GreaterThanOrEqual, a, b)
                         }
                         ASTBinOp::Le => {
                             let a = self.compile(a)?;
                             let b = self.compile(b)?;
-                            self.builder.ins().fcmp(FloatCC::LessThanOrEqual, a, b)
+                            b!(self).ins().fcmp(FloatCC::LessThanOrEqual, a, b)
                         }
                         _ => self.compile(cond)?,
                     };
@@ -830,53 +849,51 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                     val
                 } else {
                     let res = self.compile(cond)?;
-                    let cmpv = self.builder.ins().f64const(0.5);
-                    self.builder.ins().fcmp(FloatCC::GreaterThanOrEqual, res, cmpv)
+                    let cmpv = b!(self).ins().f64const(0.5);
+                    b!(self).ins().fcmp(FloatCC::GreaterThanOrEqual, res, cmpv)
                 };
 
-                let then_block = self.builder.create_block();
-                let else_block = self.builder.create_block();
-                let merge_block = self.builder.create_block();
+                let then_block = b!(self).create_block();
+                let else_block = b!(self).create_block();
+                let merge_block = b!(self).create_block();
 
                 // If-else constructs in the toy language have a return value.
                 // In traditional SSA form, this would produce a PHI between
                 // the then and else bodies. Cranelift uses block parameters,
                 // so set up a parameter in the merge block, and we'll pass
                 // the return values to it from the branches.
-                self.builder.append_block_param(merge_block, F64);
+                b!(self).append_block_param(merge_block, F64);
 
                 // Test the if condition and conditionally branch.
-                self.builder.ins().brz(condition_value, else_block, &[]);
-                // Fall through to then block.
-                self.builder.ins().jump(then_block, &[]);
+                b!(self).ins().brif(condition_value, then_block, &[], else_block, &[]);
 
-                self.builder.switch_to_block(then_block);
-                self.builder.seal_block(then_block);
+                b!(self).switch_to_block(then_block);
+                b!(self).seal_block(then_block);
                 let then_return = self.compile(then)?;
 
                 // Jump to the merge block, passing it the block return value.
-                self.builder.ins().jump(merge_block, &[then_return]);
+                b!(self).ins().jump(merge_block, &[then_return]);
 
-                self.builder.switch_to_block(else_block);
-                self.builder.seal_block(else_block);
+                b!(self).switch_to_block(else_block);
+                b!(self).seal_block(else_block);
                 let else_return = if let Some(els) = els {
                     self.compile(els)?
                 } else {
-                    self.builder.ins().f64const(0.0)
+                    b!(self).ins().f64const(0.0)
                 };
 
                 // Jump to the merge block, passing it the block return value.
-                self.builder.ins().jump(merge_block, &[else_return]);
+                b!(self).ins().jump(merge_block, &[else_return]);
 
                 // Switch to the merge block for subsequent statements.
-                self.builder.switch_to_block(merge_block);
+                b!(self).switch_to_block(merge_block);
 
                 // We've now seen all the predecessors of the merge block.
-                self.builder.seal_block(merge_block);
+                b!(self).seal_block(merge_block);
 
                 // Read the value of the if-else by reading the merge block
                 // parameter.
-                let phi = self.builder.block_params(merge_block)[0];
+                let phi = b!(self).block_params(merge_block)[0];
 
                 Ok(phi)
             }
@@ -888,7 +905,7 @@ impl<'a, 'b, 'c> DSPFunctionTranslator<'a, 'b, 'c> {
                 if let Some(value) = value {
                     Ok(value)
                 } else {
-                    Ok(self.builder.ins().f64const(0.0))
+                    Ok(b!(self).ins().f64const(0.0))
                 }
             }
         }

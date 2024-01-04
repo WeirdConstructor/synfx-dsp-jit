@@ -116,7 +116,7 @@ impl Default for AccumNodeState {
 }
 
 extern "C" fn process_accum_nod(v: f64, r: f64, state: *mut AccumNodeState) -> f64 {
-    let mut state = unsafe { &mut *state };
+    let state = unsafe { &mut *state };
     if r > 0.5 {
         state.value = 0.0;
     } else {
@@ -157,7 +157,7 @@ impl Default for PhaseNodeState {
 }
 
 extern "C" fn process_phase(freq: f64, reset: f64, state: *mut PhaseNodeState) -> f64 {
-    let mut state = unsafe { &mut *state };
+    let state = unsafe { &mut *state };
     if state.trig.check_trigger(reset as f32) {
         state.value = 0.0;
     }
@@ -287,7 +287,7 @@ impl Default for SHLNodeState {
 }
 
 extern "C" fn process_sh_l(i: f64, set: f64, state: *mut SHNodeState) -> f64 {
-    let mut state = unsafe { &mut *state };
+    let state = unsafe { &mut *state };
     if set > 0.5 {
         state.value = i;
     }
@@ -323,7 +323,7 @@ impl Default for SHNodeState {
 }
 
 extern "C" fn process_sh(i: f64, set: f64, state: *mut SHNodeState) -> f64 {
-    let mut state = unsafe { &mut *state };
+    let state = unsafe { &mut *state };
     if state.trig.check_trigger(set as f32) {
         state.value = i;
     }

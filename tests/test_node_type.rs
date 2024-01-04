@@ -76,6 +76,6 @@ impl DSPNodeType for TestNodeType {
     }
 
     fn deallocate_state(&self, ptr: *mut u8) {
-        unsafe { Box::from_raw(ptr as *mut TSTState) };
+        let _ = unsafe { Box::from_raw(ptr as *mut TSTState) };
     }
 }

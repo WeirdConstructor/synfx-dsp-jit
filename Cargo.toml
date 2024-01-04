@@ -1,6 +1,6 @@
 [package]
 name = "synfx-dsp-jit"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 authors = ["Weird Constructor <weirdconstructor@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -11,14 +11,14 @@ repository = "https://github.com/WeirdConstructor/synfx-dsp-jit"
 readme = "README.md"
 
 [dependencies]
-cranelift = "0.86.1"
-cranelift-module = "0.86.1"
-cranelift-jit = "0.86.1"
-cranelift-codegen = "0.86.1"
-cranelift-native = "0.86.1"
+cranelift = "0.103.0"
+cranelift-module = "0.103.0"
+cranelift-jit = "0.103.0"
+cranelift-codegen = "0.103.0"
+cranelift-native = "0.103.0"
 ringbuf = "0.2.8"
 anyhow = "1.0.58"
-synfx-dsp = { version = "0.5.5" }
+synfx-dsp = { version = "0.5.6" }
 #synfx-dsp = { git = "https://github.com/WeirdConstructor/synfx-dsp.git" }
 
 [dev-dependencies]

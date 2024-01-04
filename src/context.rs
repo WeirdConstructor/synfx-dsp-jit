@@ -301,7 +301,7 @@ impl DSPNodeContext {
     /// additional overhead that I wanted to save.
     pub fn free(&mut self) {
         if !self.state.is_null() {
-            unsafe { Box::from_raw(self.state) };
+            let _ = unsafe { Box::from_raw(self.state) };
             self.state = std::ptr::null_mut();
         }
     }
@@ -471,7 +471,7 @@ macro_rules! stateful_dsp_node_type {
             }
 
             fn deallocate_state(&self, ptr: *mut u8) {
-                unsafe { Box::from_raw(ptr as *mut $struct_type) };
+                let _ = unsafe { Box::from_raw(ptr as *mut $struct_type) };
             }
 
             fn documentation(&self) -> &str {
@@ -1188,7 +1188,7 @@ pub enum DSPNodeSigBit {
 ///
 ///     // Deallocate our state:
 ///     fn deallocate_state(&self, ptr: *mut u8) {
-///         unsafe { Box::from_raw(ptr as *mut MyPrimAccumulator) };
+///         let _ = unsafe { Box::from_raw(ptr as *mut MyPrimAccumulator) };
 ///     }
 /// }
 ///

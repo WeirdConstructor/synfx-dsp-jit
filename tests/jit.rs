@@ -248,7 +248,7 @@ impl Default for MyDSPNode {
 }
 
 extern "C" fn process_my_dsp_node(my_state: *mut MyDSPNode) -> f64 {
-    let mut my_state = unsafe { &mut *my_state };
+    let my_state = unsafe { &mut *my_state };
     my_state.value += 1.0;
     my_state.value
 }
